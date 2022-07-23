@@ -8,3 +8,5 @@ services:
     restart: always
     environment:
       POSTGRES_PASSWORD: example
+    volumes:
+        - ./db:/var/lib/postgresql/data
