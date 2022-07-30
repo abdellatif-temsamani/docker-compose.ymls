@@ -1,4 +1,4 @@
-# Use root/example as user/password credentials
+# Use user: root, password: example
 version: '3.1'
 
 services:
