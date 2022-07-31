@@ -1,6 +1,8 @@
 **/db
-postgresql*/
-etc/odoo-server.log
-etc/addons/
-etc/sessions/
-etc/filestore/
+odoo14-docker/postgresql*/
+odoo14-docker/etc/odoo-server.log
+odoo14-docker/etc/addons/
+odoo14-docker/etc/sessions/
+odoo14-docker/etc/filestore/
+
+
