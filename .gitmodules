@@ -1,3 +1,0 @@
-[submodule "odoo14-docker"]
-	path = odoo14-docker
-	url = git@github.com:abdellatif-temsamani/odoo14-docker.git
