@@ -1,14 +1,13 @@
 # Use user: root, password: example
-version: '3.1'
+version: "3.1"
 
 services:
-
-  db:
-    image: mysql
-    ports:
-      - "3306:3306"
-    command: --default-authentication-plugin=mysql_native_password
-    environment:
-      MYSQL_ROOT_PASSWORD: example
-    volumes:
-      - ./db:/var/lib/mysql
+    db:
+        image: mysql
+        ports:
+            - "3306:3306"
+        command: --default-authentication-plugin=mysql_native_password
+        environment:
+            MYSQL_ROOT_PASSWORD: example
+        volumes:
+            - ./db:/var/lib/mysql
