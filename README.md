@@ -26,3 +26,4 @@ This repository aims to collect docker-compose.yml from databases to apps
 - Odoo 14
 - Moodle
 - Adminer
+- WordPress

@@ -1,0 +1,30 @@
+# create a containers for wordpress and mysql
+---
+version: "3"
+services:
+    wordpress:
+        image: wordpress:latest
+        ports:
+            - "80:80"
+        volumes:
+            - ./wordpress:/var/www/html
+            - ./wp-content:/var/www/html/wp-content
+        environment:
+            WORDPRESS_DB_HOST: mysql
+            WORDPRESS_DB_USER: wordpress
+            WORDPRESS_DB_PASSWORD: wordpress
+            WORDPRESS_DB_NAME: wordpress
+    mysql:
+        image: mysql:latest
+        volumes:
+            - ./mysql:/var/lib/mysql
+        environment:
+            MYSQL_ROOT_PASSWORD: wordpress
+            MYSQL_USER: wordpress
+            MYSQL_PASSWORD: wordpress
+            MYSQL_DATABASE: wordpress
+        ports:
+            - "3306:3306"
+
+volumes:
+    mysql:
