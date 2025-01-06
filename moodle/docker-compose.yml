@@ -1,4 +1,4 @@
-version: "2"
+---
 services:
     mariadb:
         image: docker.io/bitnami/mariadb:10.6

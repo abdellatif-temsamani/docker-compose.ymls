@@ -1,6 +1,4 @@
-# create a containers for wordpress and mysql
 ---
-version: "3"
 services:
     wordpress:
         image: wordpress:latest
