@@ -1,7 +1,0 @@
-# Use postgres/example user/password credentials
----
-services:
-    adminer:
-        image: adminer
-        ports:
-            - 8080:8080

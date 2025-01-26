@@ -2,7 +2,7 @@
 ---
 services:
     db:
-        image: mysql:5.7
+        image: mysql
         container_name: db
         environment:
             MYSQL_ROOT_PASSWORD: root
