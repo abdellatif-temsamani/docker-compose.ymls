@@ -21,4 +21,4 @@ services:
         ports:
             - 3307:80
 volumes:
-    db:
+    mysql:

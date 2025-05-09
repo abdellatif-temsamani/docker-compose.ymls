@@ -17,3 +17,6 @@ services:
             - postgres
         ports:
             - 5433:8080
+
+volumes:
+    postgres:
