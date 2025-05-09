@@ -1,7 +1,8 @@
 ---
 services:
-    db:
+    postgres:
         image: postgres
+        container_name: postgres
         environment:
             POSTGRES_USER: root
             POSTGRES_PASSWORD: example
@@ -11,5 +12,8 @@ services:
             - 5432:5432
     adminer:
         image: adminer
+        container_name: adminer
+        links:
+            - postgres
         ports:
-            - 8080:8080
+            - 5433:8080

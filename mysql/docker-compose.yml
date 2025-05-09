@@ -1,28 +1,24 @@
-# Use user: root, password: example
 ---
 services:
-    db:
+    mysql:
         image: mysql
-        container_name: db
+        container_name: mysql
         environment:
             MYSQL_ROOT_PASSWORD: root
-            MYSQL_DATABASE: app_db
-            MYSQL_USER: db_user
-            MYSQL_PASSWORD: db_user_pass
         ports:
             - "3306:3306"
         volumes:
             - ./db:/var/lib/mysql
     phpmyadmin:
         image: phpmyadmin/phpmyadmin
-        container_name: pma
+        container_name: phpmyadmin
         links:
-            - db
+            - mysql
         environment:
-            PMA_HOST: db
+            PMA_HOST: mysql
             PMA_PORT: 3306
             PMA_ARBITRARY: 1
         ports:
-            - 8081:80
+            - 3307:80
 volumes:
     db:
