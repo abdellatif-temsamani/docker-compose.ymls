@@ -3,8 +3,9 @@ services:
     mysql:
         image: mysql
         container_name: mysql
+        restart: unless-stopped
         environment:
-            MYSQL_ROOT_PASSWORD: root
+            MYSQL_ROOT_PASSWORD: "@OR0Yhy@@NvC3aYd70="
         ports:
             - "3306:3306"
         volumes:
