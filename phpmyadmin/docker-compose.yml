@@ -1,0 +1,13 @@
+---
+services:
+    phpmyadmin:
+        image: phpmyadmin/phpmyadmin
+        container_name: phpmyadmin
+        environment:
+            PMA_HOST: mysql
+            PMA_PORT: 3306
+            PMA_ARBITRARY: 1
+        ports:
+            - 3307:80
+volumes:
+    mysql:

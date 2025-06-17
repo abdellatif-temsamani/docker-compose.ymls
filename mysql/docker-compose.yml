@@ -11,7 +11,7 @@ services:
             - ./db:/var/lib/mysql
     phpmyadmin:
         image: phpmyadmin/phpmyadmin
-        container_name: phpmyadmin
+        container_name: phpmyadmin_mysql
         links:
             - mysql
         environment:
