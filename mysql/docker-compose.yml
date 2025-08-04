@@ -15,9 +15,12 @@ services:
         links:
             - mysql
         environment:
+            PMA_ARBITRARY: 1
+            MEMORY_LIMIT: 512M
+            UPLOAD_LIMIT: 178M
+            POST_MAX_SIZE: 178M
             PMA_HOST: mysql
             PMA_PORT: 3306
-            PMA_ARBITRARY: 1
         ports:
             - 3307:80
 volumes:
