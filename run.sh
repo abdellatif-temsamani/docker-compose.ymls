@@ -12,4 +12,9 @@ fi
 container=$(fd . . -t d | fzf)
 
 cd "$container" || echo "error on cd to $container" exit 2
+
+# Rename tmux window to container name
+if [ -n "$TMUX" ]; then
+    tmux rename-window "$container"
+fi
 docker-compose up
