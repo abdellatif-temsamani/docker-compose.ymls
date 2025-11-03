@@ -9,12 +9,19 @@ else
     echo "Docker service is already running."
 fi
 
-container=$(fd . . -t d | fzf)
+containers=$(fd . . -t d | fzf -m)
 
-cd "$container" || echo "error on cd to $container" exit 2
+[ -z "$containers" ] && echo "No container selected." && exit 1
 
-# Rename tmux window to container name
-if [ -n "$TMUX" ]; then
-    tmux rename-window "$container"
-fi
-docker-compose up
+for container in $containers; do
+    name=$(basename "$container")
+    echo "Creating tmux window for: $name"
+
+    if [ -n "$TMUX" ]; then
+        tmux new-window -n "$name" "cd '$container' && docker-compose up" \; select-window -t "$name"
+    else
+        echo "Not in tmux — running directly for $name..."
+        (cd "$container" && docker-compose up)
+    fi
+done
+
