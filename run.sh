@@ -1,7 +1,5 @@
 #!/bin/sh
 
-git pull
-
 if ! systemctl is-active --quiet docker; then
     echo "Starting Docker service..."
     sudo systemctl start docker

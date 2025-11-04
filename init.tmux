@@ -1,4 +1,6 @@
 # Run the script inside window 1
+
+send-keys -t :1 'git fetch --all && git pull' C-m
 send-keys -t :1 'sh run.sh' C-m
 
 # Attach hook to *this* session only
