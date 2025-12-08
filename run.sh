@@ -17,6 +17,7 @@ for container in $containers; do
 
     if [ -n "$TMUX" ]; then
         tmux new-window -n "$name" "cd '$container' && docker-compose up" \; select-window -t "$name"
+        tmux select-window -t :1
     else
         echo "Not in tmux — running directly for $name..."
         (cd "$container" && docker-compose up)
