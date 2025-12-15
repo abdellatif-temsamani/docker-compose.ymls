@@ -7,7 +7,7 @@ else
     echo "Docker service is already running."
 fi
 
-containers=$(fd . . -t d | fzf -m)
+containers=$(fd . . -t d | xargs -I {} sh -c 'if [ -f "{}/docker-compose.yml" ] || [ -f "{}/docker-compose.yaml" ]; then echo "{}"; fi' | fzf -m)
 
 [ "$containers" = "" ] && echo "No container selected." && exit 1
 

@@ -4,3 +4,5 @@ odoo-14-docker-compose/postgresql/
 odoo-14-docker-compose/etc/addons/
 odoo-14-docker-compose/etc/sessions/
 odoo-14-docker-compose/etc/filestore/
+
+docker-manager/target/
