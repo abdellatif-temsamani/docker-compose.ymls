@@ -4,6 +4,72 @@ use crate::service::Service;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
+use chrono;
+
+#[derive(Clone)]
+pub struct LogEntry {
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub service: String,
+    pub message: String,
+}
+
+#[derive(Clone)]
+pub struct LogBuffer {
+    entries: Vec<LogEntry>,
+    max_capacity: usize,
+}
+
+impl Default for LogBuffer {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            max_capacity: 1000, // Keep last 1000 log entries
+        }
+    }
+}
+
+impl LogBuffer {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: Vec::with_capacity(capacity),
+            max_capacity: capacity,
+        }
+    }
+
+    pub fn add_entry(&mut self, service: String, message: String) {
+        let entry = LogEntry {
+            timestamp: chrono::Utc::now(),
+            service,
+            message,
+        };
+
+        self.entries.push(entry);
+
+        // Maintain capacity by removing oldest entries if we exceed max
+        if self.entries.len() > self.max_capacity {
+            let excess = self.entries.len() - self.max_capacity;
+            self.entries.drain(0..excess);
+        }
+    }
+
+    pub fn get_recent_logs(&self, limit: usize) -> Vec<String> {
+        let start = if self.entries.len() > limit {
+            self.entries.len() - limit
+        } else {
+            0
+        };
+
+        self.entries[start..]
+            .iter()
+            .map(|entry| format!("{}: {}", entry.service, entry.message))
+            .collect()
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
 #[derive(Default)]
 pub struct App {
     pub state: ratatui::widgets::ListState,
@@ -17,7 +83,12 @@ pub struct App {
     pub docker_command_available: bool,
     pub daemon_start_mode: bool,
     pub password_input: String,
-    pub logs: Vec<String>,
+    pub logs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, LogBuffer>>>,
+    pub log_scroll_position: u16,
+    pub log_auto_scroll: bool,
+    pub log_scrollbar_state: ratatui::widgets::ScrollbarState,
+    pub log_viewport_height: u16, // Height of the logs viewport (for scroll calculations)
+    pub log_total_lines: u16, // Total number of log lines (for scroll calculations)
 }
 
 fn check_docker_daemon() -> bool {
@@ -117,7 +188,12 @@ impl App {
             docker_command_available,
             daemon_start_mode: false,
             password_input: String::new(),
-            logs: vec![],
+            logs: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            log_scroll_position: 0,
+            log_auto_scroll: true,
+            log_scrollbar_state: ratatui::widgets::ScrollbarState::default(),
+            log_viewport_height: 10, // Default, will be updated in draw
+            log_total_lines: 0, // Will be updated in draw
         };
         app.refresh_statuses(); // Check current statuses
         app.refresh_logs(); // Load logs for selected
@@ -136,6 +212,10 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        // Reset scroll position and enable auto-scroll when switching services
+        self.log_scroll_position = 0;
+        self.log_auto_scroll = true;
+        self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
 
     pub fn previous(&mut self) {
@@ -150,6 +230,10 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        // Reset scroll position and enable auto-scroll when switching services
+        self.log_scroll_position = 0;
+        self.log_auto_scroll = true;
+        self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
 }
 

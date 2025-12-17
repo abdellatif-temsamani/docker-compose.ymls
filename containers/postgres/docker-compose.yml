@@ -1,22 +1,22 @@
 ---
 services:
-    postgres:
-        image: postgres
-        container_name: postgres
-        environment:
-            POSTGRES_USER: root
-            POSTGRES_PASSWORD: root
-        volumes:
-            - ./db:/var/lib/postgresql
-        ports:
-            - 5432:5432
-    adminer:
-        image: adminer
-        container_name: adminer
-        links:
-            - postgres
-        ports:
-            - 5433:8080
+  postgres:
+    image: postgres
+    container_name: postgres
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    volumes:
+      - ./db:/var/lib/postgresql
+    ports:
+      - 5432:5432
+  postgres_adminer:
+    image: adminer
+    container_name: adminer
+    links:
+      - postgres
+    ports:
+      - 5433:8080
 
 volumes:
-    postgres:
+  postgres:

@@ -1,12 +1,10 @@
 ---
 services:
-    adminer:
-        image: adminer
-        container_name: adminer
-        links:
-            - postgres
-        ports:
-            - 5433:8080
+  adminer:
+    image: adminer
+    container_name: standalone_adminer
+    ports:
+      - 5433:8080
 
 volumes:
-    postgres:
+  postgres:

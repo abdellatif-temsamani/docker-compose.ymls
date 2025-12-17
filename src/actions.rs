@@ -1,6 +1,8 @@
 use std::process::Command;
+use std::thread;
+use std::sync::Arc;
 
-use crate::app::App;
+use crate::app::{App, LogBuffer};
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
@@ -46,17 +48,94 @@ impl App {
                 return;
             }
             service.status = Status::Starting;
-            let _ = Command::new("docker-compose")
-                .arg("up")
-                .arg("-d")
-                .arg("--quiet-pull")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .current_dir(format!("containers/{}", service.name))
-                .spawn();
+
+            // Clone the service name and logs for the thread
+            let service_name = service.name.clone();
+            let service_name_for_toast = service_name.clone();
+            let logs = Arc::clone(&self.logs);
+            let container_dir = format!("containers/{}", service_name);
+
+            // Spawn a thread to handle the service startup
+            thread::spawn(move || {
+                // First, pull images and capture logs
+                {
+                    let mut logs_guard = logs.lock().unwrap();
+                    logs_guard.entry(service_name.clone())
+                        .or_insert_with(|| LogBuffer::default())
+                        .add_entry(service_name.clone(), "Pulling images...".to_string());
+                }
+                match Command::new("docker-compose")
+                    .arg("pull")
+                    .current_dir(&container_dir)
+                    .output()
+                {
+                    Ok(out) => {
+                        let mut logs_guard = logs.lock().unwrap();
+                        let service_buffer = logs_guard.entry(service_name.clone())
+                            .or_insert_with(|| LogBuffer::default());
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        for line in stdout.lines().chain(stderr.lines()) {
+                            if !line.trim().is_empty() {
+                                service_buffer.add_entry(service_name.clone(), format!("pull: {}", line));
+                            }
+                        }
+                        if out.status.success() {
+                            service_buffer.add_entry(service_name.clone(), "Pull completed successfully".to_string());
+                        } else {
+                            service_buffer.add_entry(service_name.clone(), "Pull failed".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        let mut logs_guard = logs.lock().unwrap();
+                        logs_guard.entry(service_name.clone())
+                            .or_insert_with(|| LogBuffer::default())
+                            .add_entry(service_name.clone(), format!("Pull error: {}", e));
+                    }
+                }
+
+                // Then start the service and capture initial logs
+                {
+                    let mut logs_guard = logs.lock().unwrap();
+                    logs_guard.entry(service_name.clone())
+                        .or_insert_with(|| LogBuffer::default())
+                        .add_entry(service_name.clone(), "Starting service...".to_string());
+                }
+                match Command::new("docker-compose")
+                    .arg("up")
+                    .arg("-d")
+                    .current_dir(&container_dir)
+                    .output()
+                {
+                    Ok(out) => {
+                        let mut logs_guard = logs.lock().unwrap();
+                        let service_buffer = logs_guard.entry(service_name.clone())
+                            .or_insert_with(|| LogBuffer::default());
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        for line in stdout.lines().chain(stderr.lines()) {
+                            if !line.trim().is_empty() {
+                                service_buffer.add_entry(service_name.clone(), format!("up: {}", line));
+                            }
+                        }
+                        if out.status.success() {
+                            service_buffer.add_entry(service_name.clone(), "Service started successfully".to_string());
+                        } else {
+                            service_buffer.add_entry(service_name.clone(), "Service start failed".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        let mut logs_guard = logs.lock().unwrap();
+                        logs_guard.entry(service_name.clone())
+                            .or_insert_with(|| LogBuffer::default())
+                            .add_entry(service_name.clone(), format!("Start error: {}", e));
+                    }
+                }
+            });
+
             self.toast = Some(Toast {
                 state: ToastState::Success,
-                message: format!("Starting {}", service.name),
+                message: format!("Starting {}", service_name_for_toast),
             });
             self.toast_timer = 3;
         }
@@ -83,15 +162,55 @@ impl App {
                 return;
             }
             service.status = Status::Stopping;
-            let _ = Command::new("docker-compose")
-                .arg("down")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .current_dir(format!("containers/{}", service.name))
-                .spawn();
+
+            // Clone the service name and logs for the thread
+            let service_name = service.name.clone();
+            let service_name_for_toast = service_name.clone();
+            let logs = Arc::clone(&self.logs);
+            let container_dir = format!("containers/{}", service_name);
+
+            // Spawn a thread to handle the service shutdown
+            thread::spawn(move || {
+                {
+                    let mut logs_guard = logs.lock().unwrap();
+                    logs_guard.entry(service_name.clone())
+                        .or_insert_with(|| LogBuffer::default())
+                        .add_entry(service_name.clone(), "Stopping service...".to_string());
+                }
+                match Command::new("docker-compose")
+                    .arg("down")
+                    .current_dir(&container_dir)
+                    .output()
+                {
+                    Ok(out) => {
+                        let mut logs_guard = logs.lock().unwrap();
+                        let service_buffer = logs_guard.entry(service_name.clone())
+                            .or_insert_with(|| LogBuffer::default());
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        for line in stdout.lines().chain(stderr.lines()) {
+                            if !line.trim().is_empty() {
+                                service_buffer.add_entry(service_name.clone(), format!("down: {}", line));
+                            }
+                        }
+                        if out.status.success() {
+                            service_buffer.add_entry(service_name.clone(), "Service stopped successfully".to_string());
+                        } else {
+                            service_buffer.add_entry(service_name.clone(), "Service stop failed".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        let mut logs_guard = logs.lock().unwrap();
+                        logs_guard.entry(service_name.clone())
+                            .or_insert_with(|| LogBuffer::default())
+                            .add_entry(service_name.clone(), format!("Stop error: {}", e));
+                    }
+                }
+            });
+
             self.toast = Some(Toast {
                 state: ToastState::Success,
-                message: format!("Stopping {}", service.name),
+                message: format!("Stopping {}", service_name_for_toast),
             });
             self.toast_timer = 3;
         }
@@ -110,7 +229,11 @@ impl App {
 
     pub fn refresh_logs(&mut self) {
         if !self.docker_daemon_running {
-            self.logs = vec!["Docker daemon not running".to_string()];
+            // Add system message to all existing service buffers
+            let mut logs_guard = self.logs.lock().unwrap();
+            for (_service_name, buffer) in logs_guard.iter_mut() {
+                buffer.add_entry("system".to_string(), "Docker daemon not running".to_string());
+            }
             return;
         }
         if let Some(i) = self.state.selected() {
@@ -118,25 +241,31 @@ impl App {
             match Command::new("docker-compose")
                 .arg("logs")
                 .arg("--tail")
-                .arg("10")
-                .arg(&service.name)
+                .arg("20")
                 .current_dir(format!("containers/{}", service.name))
                 .output()
             {
                 Ok(out) => {
+                    let mut logs_guard = self.logs.lock().unwrap();
+                    let service_buffer = logs_guard.entry(service.name.clone())
+                        .or_insert_with(|| LogBuffer::default());
                     let stdout = String::from_utf8_lossy(&out.stdout);
-                    self.logs = if stdout.trim().is_empty() {
-                        vec!["No logs available".to_string()]
-                    } else {
-                        stdout.lines().map(|s| s.to_string()).collect()
-                    };
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+
+                    // Add runtime logs if available
+                    for line in stdout.lines().chain(stderr.lines()) {
+                        if !line.trim().is_empty() {
+                            service_buffer.add_entry(service.name.clone(), format!("runtime: {}", line));
+                        }
+                    }
                 }
-                Err(_) => {
-                    self.logs = vec!["Failed to get logs".to_string()];
+                Err(e) => {
+                    let mut logs_guard = self.logs.lock().unwrap();
+                    let service_buffer = logs_guard.entry(service.name.clone())
+                        .or_insert_with(|| LogBuffer::default());
+                    service_buffer.add_entry(service.name.clone(), format!("Failed to get logs: {}", e));
                 }
             }
-        } else {
-            self.logs = vec![];
         }
     }
 

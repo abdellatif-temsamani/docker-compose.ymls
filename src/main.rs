@@ -16,7 +16,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation},
 };
 use std::time::Duration;
 
@@ -214,7 +214,39 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                     .areas(chunks[list_start]);
             frame.render_stateful_widget(list, list_rect, &mut app.state);
 
-            let logs_text = app.logs.join("\n");
+            let (logs_text, log_line_count) = {
+                let logs_guard = app.logs.lock().unwrap();
+                if let Some(i) = app.state.selected() {
+                    let service_name = &app.services[i].name;
+                    if let Some(buf) = logs_guard.get(service_name) {
+                        let logs = buf.get_recent_logs(200); // Get more logs for scrolling
+                        if logs.is_empty() {
+                            ("No logs yet - start the service to see activity".to_string(), 1)
+                        } else {
+                            (logs.join("\n"), logs.len() as u16)
+                        }
+                    } else {
+                        ("No logs yet - start the service to see activity".to_string(), 1)
+                    }
+                } else {
+                    ("Select a service to view logs".to_string(), 1)
+                }
+            };
+
+            // Calculate dimensions for scrolling
+            let logs_height = logs_rect.height.saturating_sub(2); // Subtract borders
+            app.log_viewport_height = logs_height; // Store for key handling
+            app.log_total_lines = log_line_count; // Store for key handling
+
+            // Auto-scroll logic: scroll to bottom if auto-scroll is enabled
+            if app.log_auto_scroll && log_line_count > logs_height {
+                app.log_scroll_position = log_line_count.saturating_sub(logs_height);
+            }
+
+            // Update scrollbar state
+            app.log_scrollbar_state = app.log_scrollbar_state.content_length(log_line_count as usize);
+            app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+
             let logs_widget = Paragraph::new(logs_text)
                 .block(
                     Block::default()
@@ -223,21 +255,30 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                         .border_style(Style::default().fg(Color::Blue)),
                 )
                 .style(Style::default().fg(Color::White))
-                .wrap(ratatui::widgets::Wrap { trim: true });
+                .wrap(ratatui::widgets::Wrap { trim: true })
+                .scroll((app.log_scroll_position, 0));
             frame.render_widget(logs_widget, logs_rect);
+
+            // Render scrollbar
+            frame.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .begin_symbol(Some("↑"))
+                    .end_symbol(Some("↓")),
+                logs_rect,
+                &mut app.log_scrollbar_state,
+            );
 
             let help_text = Line::from(vec![
                 Span::styled("j/k/arrows: ", Style::default().fg(Color::Yellow)),
                 Span::styled("navigate | ", Style::default().fg(Color::White)),
-                Span::styled("tab: ", Style::default().fg(Color::Cyan)),
-                Span::styled("cycle | ", Style::default().fg(Color::White)),
+                Span::styled("Shift+J/K: ", Style::default().fg(Color::Cyan)),
+                Span::styled("scroll logs | ", Style::default().fg(Color::White)),
+                Span::styled("PgUp/PgDn/Home/End: ", Style::default().fg(Color::Magenta)),
+                Span::styled("page nav | ", Style::default().fg(Color::White)),
                 Span::styled("space: ", Style::default().fg(Color::Green)),
                 Span::styled("toggle start/stop | ", Style::default().fg(Color::White)),
                 Span::styled("r: ", Style::default().fg(Color::Red)),
                 Span::styled("refresh | ", Style::default().fg(Color::White)),
-                Span::styled("d: ", Style::default().fg(Color::Magenta)),
-                Span::styled("start daemon | ", Style::default().fg(Color::White)),
-                Span::styled("auto-refresh every 1s | ", Style::default().fg(Color::Gray)),
                 Span::styled("q: ", Style::default().fg(Color::Red)),
                 Span::styled("quit", Style::default().fg(Color::White)),
             ]);
@@ -320,6 +361,46 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                             _ => {}
                         },
                         _ => match key.code {
+                            // Log scrolling shortcuts (must come before navigation)
+                            KeyCode::Char('K') => { // Shift+K (uppercase)
+                                app.log_auto_scroll = false;
+                                app.log_scroll_position = app.log_scroll_position.saturating_sub(1);
+                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                            }
+                            KeyCode::Char('J') => { // Shift+J (uppercase)
+                                app.log_scroll_position = app.log_scroll_position.saturating_add(1);
+                                app.log_auto_scroll = false;
+                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                            }
+                            // Page up/down for larger scrolls
+                            KeyCode::PageUp => {
+                                let scroll_amount = (app.log_viewport_height / 2).max(1);
+                                app.log_auto_scroll = false;
+                                app.log_scroll_position = app.log_scroll_position.saturating_sub(scroll_amount);
+                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                            }
+                            KeyCode::PageDown => {
+                                let scroll_amount = (app.log_viewport_height / 2).max(1);
+                                app.log_scroll_position = app.log_scroll_position.saturating_add(scroll_amount);
+                                app.log_auto_scroll = false;
+                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                            }
+                            // Home/End for quick navigation
+                            KeyCode::Home => {
+                                app.log_auto_scroll = false;
+                                app.log_scroll_position = 0;
+                                app.log_scrollbar_state = app.log_scrollbar_state.position(0);
+                            }
+                            KeyCode::End => {
+                                if app.log_total_lines > app.log_viewport_height {
+                                    app.log_scroll_position = app.log_total_lines.saturating_sub(app.log_viewport_height);
+                                } else {
+                                    app.log_scroll_position = 0;
+                                }
+                                app.log_auto_scroll = true; // Re-enable auto-scroll at bottom
+                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                            }
+                            // Navigation (must come after scrolling shortcuts)
                             KeyCode::Char('j') | KeyCode::Down => {
                                 app.next();
                                 app.refresh_logs();

@@ -1,27 +1,27 @@
 ---
 services:
-    mysql:
-        image: mysql
-        container_name: mysql
-        environment:
-            MYSQL_ROOT_PASSWORD: root
-        ports:
-            - "3306:3306"
-        volumes:
-            - ./db:/var/lib/mysql
-    phpmyadmin:
-        image: phpmyadmin/phpmyadmin
-        container_name: phpmyadmin_mysql
-        links:
-            - mysql
-        environment:
-            PMA_ARBITRARY: 1
-            MEMORY_LIMIT: 512M
-            UPLOAD_LIMIT: 178M
-            POST_MAX_SIZE: 178M
-            PMA_HOST: mysql
-            PMA_PORT: 3306
-        ports:
-            - 3307:80
+  mysql:
+    image: mysql
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db:/var/lib/mysql
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin_mysql
+    links:
+      - mysql
+    environment:
+      PMA_ARBITRARY: 1
+      MEMORY_LIMIT: 512M
+      UPLOAD_LIMIT: 178M
+      POST_MAX_SIZE: 178M
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - 3307:80
 volumes:
-    mysql:
+  mysql:
