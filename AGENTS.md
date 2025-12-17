@@ -7,6 +7,7 @@
 - **Test all**: `cargo test`
 - **Test single**: `cargo test <test_name>`
 - **Format**: `cargo fmt`
+- **Running**: I run the app myself and test it
 
 ## Code Style Guidelines
 - **Language**: Rust 2024 edition, modern idiomatic patterns
