@@ -1,23 +1,78 @@
 > NOTICE: containers are not production
 
 # Table of Content
+- [Docker Manager](#docker-manager)
 - [Available Containers](#available-containers)
-- [run.sh Usage](#runsh-usage)
 - [init.tmux - Automated Setup](#inittmux---automated-setup)
+- [run.sh Usage](#runsh-usage)
 
-# docker-compose.ymls
+# Docker Compose Manager
 
-This repository aims to collect docker-compose.yml config, the collection
-intended to for development purposes only.
+This repository provides a collection of docker-compose.yml configurations for development purposes and a Rust-based terminal UI application for interactively managing Docker Compose services.
+
+## Docker Manager
+
+The Docker Manager is a Rust-based terminal user interface (TUI) application for interactively managing Docker Compose services.
+
+### Features
+- Interactive selection and management of Docker Compose services
+- Start, stop, and monitor service statuses
+- Designed to work with the container configurations in this repository
+
+### Dependencies
+- Rust and Cargo (for building)
+- Docker and Docker Compose
+
+### Building and Running
+1. Ensure Rust is installed: https://rustup.rs/
+2. Build the application:
+   ```bash
+   cargo build --release
+   ```
+3. Run the manager:
+   ```bash
+   ./target/release/docker-manager
+   ```
+
+**Alternative:** If Rust or Cargo is not available, use the `run.sh` script for interactive container management.
+
+### Usage
+- Use arrow keys to navigate services
+- Press `Enter` to toggle start/stop
+- Press `q` to quit
+- Services are loaded from the `containers/` directory
 
 ## Available Containers
 
 Each directory contains a `docker-compose.yml` for its service:
 
-- **mysql** - MySQL database with phpMyAdmin
-- **postgres** - PostgreSQL database with Adminer
+- **mysql** - MySQL database with integrated phpMyAdmin
+- **postgres** - PostgreSQL database with integrated Adminer
 - **redis** - Redis cache
-- **phpmyadmin** - phpMyAdmin standalone
+- **phpmyadmin** - phpMyAdmin standalone (for external MySQL databases)
+- **adminer** - Adminer standalone (for external databases)
+
+## init.tmux - Automated Setup
+
+The `init.tmux` file provides automated tmux session setup:
+
+**What it does:**
+- Automatically runs `run.sh` in tmux window 1
+- Sets a session-closed hook that kills all running Docker containers when you exit tmux
+
+**Usage:**
+
+Start tmux and source the init file in one command:
+```bash
+tmux new -s containers \; source-file ./init.tmux
+```
+
+Or source it in an existing tmux session:
+```bash
+tmux source-file ./init.tmux
+```
+
+**Note:** The cleanup hook will stop all Docker containers (not just this project's) when the tmux session closes. If you have other containers running, use the manual method instead.
 
 ## run.sh Usage
 
@@ -63,24 +118,46 @@ The `run.sh` script provides an interactive way to start multiple containers.
 - In tmux: Press `Ctrl+C` in the window running the container
 - From another terminal: `docker compose -f <dir>/docker-compose.yml down`
 
-### init.tmux - Automated Setup
+## run.sh Usage
 
-The `init.tmux` file provides automated tmux session setup:
+The `run.sh` script provides an interactive way to start multiple containers.
 
-**What it does:**
-- Automatically runs `run.sh` in tmux window 1
-- Sets a session-closed hook that kills all running Docker containers when you exit tmux
+### What it does
+1. Runs `git pull` to update the repository
+2. Ensures Docker service is running (via systemd)
+3. Uses `fd` and `fzf` to let you select containers interactively
+4. Starts each selected container in a new tmux window (or directly if not in tmux)
 
-**Usage:**
+### Dependencies
+- **docker** and **docker-compose**
+- **fd** - fast file finder
+- **fzf** - fuzzy finder for interactive selection
+- **tmux** - terminal multiplexer (required for multi-window experience)
+- **systemd** - for Docker service management (requires sudo)
 
-Start tmux and source the init file in one command:
-```bash
-tmux new -s containers \; source-file ./init.tmux
-```
+### How to use
+1. Make the script executable:
+   ```bash
+   chmod +x ./run.sh
+   ```
 
-Or source it in an existing tmux session:
-```bash
-tmux source-file ./init.tmux
-```
+2. Start a tmux session (recommended):
+   ```bash
+   tmux new -s containers
+   ```
 
-**Note:** The cleanup hook will stop all Docker containers (not just this project's) when the tmux session closes. If you have other containers running, use the manual method instead.
+3. Run the script:
+   ```bash
+   ./run.sh
+   ```
+
+4. Select containers:
+   - Use arrow keys to navigate
+   - Press `Tab` to select multiple containers
+   - Press `Enter` to start selected containers
+
+5. Each container will open in its own tmux window
+
+### Stopping containers
+- In tmux: Press `Ctrl+C` in the window running the container
+- From another terminal: `docker compose -f <dir>/docker-compose.yml down`
