@@ -11,8 +11,8 @@ use ratatui::{
         event::{self, KeyCode, KeyEventKind, poll},
         terminal,
     },
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -21,6 +21,8 @@ use std::time::Duration;
 use app::App;
 use service::Service;
 use status::Status;
+
+
 
 fn main() -> io::Result<()> {
     let (width, height) = terminal::size()?;
@@ -51,8 +53,7 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                         Constraint::Length(3),
                         Constraint::Length(3),
                         Constraint::Min(5),
-                        Constraint::Percentage(20),
-                        Constraint::Percentage(20),
+                        Constraint::Percentage(60),
                     ])
                     .split(frame.area())
             } else {
@@ -61,8 +62,7 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                     .constraints([
                         Constraint::Length(3),
                         Constraint::Percentage(60),
-                        Constraint::Percentage(20),
-                        Constraint::Percentage(20),
+                        Constraint::Percentage(40),
                     ])
                     .split(frame.area())
             };
@@ -102,11 +102,6 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                 3
             } else {
                 2
-            };
-            let output_start = if app.search_mode || app.daemon_start_mode {
-                4
-            } else {
-                3
             };
 
             let top_chunks = Layout::default()
@@ -255,23 +250,33 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
 
             frame.render_widget(help, chunks[help_start]);
 
-            let output_text = app
-                .last_actions
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n");
-            let output = Paragraph::new(output_text)
-                .block(
-                    Block::default()
-                        .title("Output")
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue)),
-                )
-                .style(Style::default().fg(Color::White))
-                .wrap(ratatui::widgets::Wrap { trim: true });
+            if let Some(toast) = &app.toast {
+                let (bg_color, fg_color, border_color) = match toast.state {
+                    crate::status::ToastState::Success => (Color::Green, Color::White, Color::Green),
+                    crate::status::ToastState::Warning => (Color::Yellow, Color::Black, Color::Yellow),
+                    crate::status::ToastState::Error => (Color::Red, Color::White, Color::Red),
+                    crate::status::ToastState::Info => (Color::Blue, Color::Black, Color::Black),
+                };
+                let toast_width = 50;
+                let toast_height = 3;
+                let toast_area = Rect {
+                    x: frame.area().width.saturating_sub(toast_width),
+                    y: 0,
+                    width: toast_width.min(frame.area().width),
+                    height: toast_height,
+                };
+                let toast_widget = Paragraph::new(toast.message.clone())
+                    .block(
+                        Block::default()
+                            .title("Notification")
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD))
+                            .style(Style::default().bg(bg_color).fg(fg_color)),
+                    )
+                    .wrap(ratatui::widgets::Wrap { trim: true });
+                frame.render_widget(toast_widget, toast_area);
+            }
 
-            frame.render_widget(output, chunks[output_start]);
         })?;
 
         if poll(Duration::from_secs(1))? {
@@ -348,10 +353,11 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                             KeyCode::Char('r') => {
                                 app.refresh_statuses();
                                 app.refresh_logs();
-                                app.last_actions.push_back("Refreshed statuses".to_string());
-                                if app.last_actions.len() > 20 {
-                                    app.last_actions.pop_front();
-                                }
+                                app.toast = Some(crate::app::Toast {
+                                    state: crate::status::ToastState::Info,
+                                    message: "Refreshed statuses".to_string(),
+                                });
+                                app.toast_timer = 3;
                             }
                             _ => {}
                         },
@@ -361,10 +367,12 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
             // Timeout: auto-refresh statuses
             app.refresh_statuses();
             app.refresh_logs();
-            app.last_actions
-                .push_back("Auto-refreshed statuses".to_string());
-            if app.last_actions.len() > 20 {
-                app.last_actions.pop_front();
+        }
+
+        if app.toast_timer > 0 {
+            app.toast_timer = app.toast_timer.saturating_sub(1);
+            if app.toast_timer == 0 {
+                app.toast = None;
             }
         }
     }

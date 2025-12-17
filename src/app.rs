@@ -1,14 +1,20 @@
-use std::collections::VecDeque;
 use std::process::Command;
 
 use crate::service::Service;
-use crate::status::Status;
+use crate::status::{Status, ToastState};
+
+#[derive(Clone)]
+pub struct Toast {
+    pub state: ToastState,
+    pub message: String,
+}
 
 #[derive(Default)]
 pub struct App {
     pub state: ratatui::widgets::ListState,
     pub services: Vec<Service>,
-    pub last_actions: VecDeque<String>,
+    pub toast: Option<Toast>,
+    pub toast_timer: u32,
 
     pub search_mode: bool,
     pub search_query: String,
@@ -17,14 +23,6 @@ pub struct App {
     pub daemon_start_mode: bool,
     pub password_input: String,
     pub logs: Vec<String>,
-}
-
-fn check_docker_available() -> bool {
-    Command::new("docker-compose")
-        .arg("--version")
-        .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
 }
 
 fn check_docker_daemon() -> bool {
@@ -83,22 +81,11 @@ impl App {
                     status: Status::Error,
                 })
                 .collect(),
-            last_actions: {
-                let mut dq = VecDeque::new();
-                if !check_docker_available() {
-                    dq.push_back(
-                        "Warning: Docker Compose not found. Services may not work.".to_string(),
-                    );
-                }
-                if !docker_command_available {
-                    dq.push_back("Warning: Docker CLI not found.".to_string());
-                }
-                if !docker_running {
-                    dq.push_back("Warning: Docker daemon not running.".to_string());
-                }
-                dq.push_back("Welcome to Docker Manager".to_string());
-                dq
-            },
+            toast: Some(Toast {
+                state: ToastState::Info,
+                message: "Welcome to Docker Manager".to_string(),
+            }),
+            toast_timer: 3,
 
             search_mode: false,
             search_query: String::new(),
@@ -110,14 +97,6 @@ impl App {
         };
         app.refresh_statuses(); // Check current statuses
         app.refresh_logs(); // Load logs for selected
-        // Add initial status to output
-        for service in &app.services {
-            app.last_actions
-                .push_back(format!("{}: {}", service.name, service.status));
-            if app.last_actions.len() > 20 {
-                app.last_actions.pop_front();
-            }
-        }
         app
     }
 
@@ -144,21 +123,21 @@ impl App {
     pub fn start_service(&mut self) {
         if let Some(i) = self.state.selected() {
             if !self.docker_daemon_running {
-                self.last_actions
-                    .push_back("Cannot start service: Docker daemon not running".to_string());
-                if self.last_actions.len() > 20 {
-                    self.last_actions.pop_front();
-                }
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: "Cannot start service: Docker daemon not running".to_string(),
+                });
+                self.toast_timer = 3;
                 return;
             }
             let service = &mut self.services[i];
             let current_status = get_status(service.name.clone());
             if current_status == Status::Running {
-                self.last_actions
-                    .push_back(format!("{} already running", service.name));
-                if self.last_actions.len() > 20 {
-                    self.last_actions.pop_front();
-                }
+                self.toast = Some(Toast {
+                    state: ToastState::Warning,
+                    message: format!("{} already running", service.name),
+                });
+                self.toast_timer = 3;
                 return;
             }
             service.status = Status::Starting;
@@ -170,32 +149,32 @@ impl App {
                 .stderr(std::process::Stdio::null())
                 .current_dir(format!("containers/{}", service.name))
                 .spawn();
-            self.last_actions
-                .push_back(format!("Starting {}", service.name));
-            if self.last_actions.len() > 20 {
-                self.last_actions.pop_front();
-            }
+            self.toast = Some(Toast {
+                state: ToastState::Success,
+                message: format!("Starting {}", service.name),
+            });
+            self.toast_timer = 3;
         }
     }
 
     pub fn stop_service(&mut self) {
         if let Some(i) = self.state.selected() {
             if !self.docker_daemon_running {
-                self.last_actions
-                    .push_back("Cannot stop service: Docker daemon not running".to_string());
-                if self.last_actions.len() > 20 {
-                    self.last_actions.pop_front();
-                }
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: "Cannot stop service: Docker daemon not running".to_string(),
+                });
+                self.toast_timer = 3;
                 return;
             }
             let service = &mut self.services[i];
             let current_status = get_status(service.name.clone());
             if current_status != Status::Running {
-                self.last_actions
-                    .push_back(format!("{} not running", service.name));
-                if self.last_actions.len() > 20 {
-                    self.last_actions.pop_front();
-                }
+                self.toast = Some(Toast {
+                    state: ToastState::Warning,
+                    message: format!("{} not running", service.name),
+                });
+                self.toast_timer = 3;
                 return;
             }
             service.status = Status::Stopping;
@@ -205,11 +184,11 @@ impl App {
                 .stderr(std::process::Stdio::null())
                 .current_dir(format!("containers/{}", service.name))
                 .spawn();
-            self.last_actions
-                .push_back(format!("Stopping {}", service.name));
-            if self.last_actions.len() > 20 {
-                self.last_actions.pop_front();
-            }
+            self.toast = Some(Toast {
+                state: ToastState::Success,
+                message: format!("Stopping {}", service.name),
+            });
+            self.toast_timer = 3;
         }
     }
 
@@ -305,8 +284,11 @@ impl App {
                 }
                 match child.wait() {
                     Ok(status) if status.success() => {
-                        self.last_actions
-                            .push_back("Docker daemon started".to_string());
+                        self.toast = Some(Toast {
+                            state: ToastState::Success,
+                            message: "Docker daemon started".to_string(),
+                        });
+                        self.toast_timer = 3;
                         self.docker_daemon_running = true;
                         self.refresh_statuses();
                     }
@@ -323,20 +305,24 @@ impl App {
                         } else {
                             "Failed to start Docker daemon".to_string()
                         };
-                        self.last_actions.push_back(error_msg);
+                        self.toast = Some(Toast {
+                            state: ToastState::Error,
+                            message: error_msg,
+                        });
+                        self.toast_timer = 3;
                     }
                 }
             }
             Err(e) => {
-                self.last_actions
-                    .push_back(format!("Failed to start Docker daemon: {}", e));
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: format!("Failed to start Docker daemon: {}", e),
+                });
+                self.toast_timer = 3;
             }
         }
         self.password_input.clear();
         self.daemon_start_mode = false;
-        if self.last_actions.len() > 20 {
-            self.last_actions.pop_front();
-        }
     }
 }
 

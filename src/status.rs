@@ -23,3 +23,11 @@ impl fmt::Display for Status {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum ToastState {
+    Success,
+    Warning,
+    Error,
+    Info,
+}
+
