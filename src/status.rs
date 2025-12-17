@@ -1,5 +1,5 @@
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum Status {
@@ -23,3 +23,4 @@ impl fmt::Display for Status {
         }
     }
 }
+

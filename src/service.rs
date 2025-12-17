@@ -6,3 +6,4 @@ pub struct Service {
     pub name: String,
     pub status: Status,
 }
+
