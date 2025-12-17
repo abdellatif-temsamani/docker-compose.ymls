@@ -15,34 +15,32 @@ impl App {
 
         if !self.docker_daemon_running {
             for service in &mut self.services {
-                service.status = Status::DaemonNotRunning;
+                *service.status.lock().unwrap() = Status::DaemonNotRunning;
             }
         } else {
-            // Use batch status checking for better performance
-            // Always check on first run or when daemon changed or services are in transition
-            if self.first_status_check ||
-                daemon_changed ||
-                self.services.iter().any(|s| matches!(s.status, Status::Starting | Status::Stopping | Status::Pulling)) {
+            // Check status on first run or when daemon changed
+            if self.first_status_check || daemon_changed {
                 let service_names: Vec<String> = self.services.iter().map(|s| s.name.clone()).collect();
                 let batch_statuses = get_batch_statuses(&service_names);
 
                 for service in &mut self.services {
                     if let Some(actual_status) = batch_statuses.get(&service.name).cloned() {
                         // Handle state transitions based on current state and actual container status
-                        match service.status {
+                        let mut status_lock = service.status.lock().unwrap();
+                        match *status_lock {
                             Status::Pulling => {
                                 // If pulling and containers are now running, transition is complete
                                 if actual_status == Status::Running {
-                                    service.status = Status::Running;
+                                    *status_lock = Status::Running;
                                 }
                                 // If still stopped after pulling, check logs for errors
                                 else if actual_status == Status::Stopped {
                                     let logs = service.logs.lock().unwrap();
                                     if logs.contains("Pull failed") || logs.contains("Pull output:") && !logs.contains("Up output:") {
-                                        service.status = Status::Error;
+                                        *status_lock = Status::Error;
                                     } else {
                                         // Pull completed but containers not yet started, transition to Starting
-                                        service.status = Status::Starting;
+                                        *status_lock = Status::Starting;
                                     }
                                 }
                                 // Stay in Pulling if still transitioning
@@ -50,24 +48,24 @@ impl App {
                             Status::Starting => {
                                 // If containers are now running, transition complete
                                 if actual_status == Status::Running {
-                                    service.status = Status::Running;
+                                    *status_lock = Status::Running;
                                 }
                                 // If still stopped, check for errors
                                 else if actual_status == Status::Stopped {
-                                    service.status = Status::Error;
+                                    *status_lock = Status::Error;
                                 }
                                 // Stay in Starting if still transitioning
                             }
                             Status::Stopping => {
                                 // If containers are now stopped, transition complete
                                 if actual_status == Status::Stopped {
-                                    service.status = Status::Stopped;
+                                    *status_lock = Status::Stopped;
                                 }
                                 // Stay in Stopping if still transitioning
                             }
                             // For stable states, update to actual status
                             _ => {
-                                service.status = actual_status;
+                                *status_lock = actual_status;
                             }
                         }
                     }
@@ -99,7 +97,7 @@ impl App {
             }
 
             // Set initial status to Pulling
-            service.status = Status::Pulling;
+            *service.status.lock().unwrap() = Status::Pulling;
 
             // Clone necessary data for the thread
             let service_name = service.name.clone();
@@ -194,7 +192,7 @@ impl App {
                 self.toast_timer = 4;
                 return;
             }
-            service.status = Status::Stopping;
+            *service.status.lock().unwrap() = Status::Stopping;
 
             // Clone the service name for the thread
             let service_name = service.name.clone();
@@ -234,7 +232,7 @@ impl App {
     pub fn toggle_service(&mut self) {
         if let Some(i) = self.state.selected() {
             let service = &self.services[i];
-            if service.status == Status::Running {
+            if *service.status.lock().unwrap() == Status::Running {
                 self.stop_service();
             } else {
                 self.start_service();
@@ -310,7 +308,7 @@ impl App {
     pub fn stop_all_services(&mut self) -> Result<(), String> {
         // Stop all running services before stopping daemon
         let running_services: Vec<String> = self.services.iter()
-            .filter(|s| s.status == Status::Running)
+            .filter(|s| *s.status.lock().unwrap() == Status::Running)
             .map(|s| s.name.clone())
             .collect();
 

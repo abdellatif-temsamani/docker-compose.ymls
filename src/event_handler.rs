@@ -136,8 +136,7 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
             }
         }
     } else {
-        // Timeout: auto-refresh statuses
-        app.refresh_statuses();
+        // Timeout: do nothing, events handle status updates
     }
 
     // Handle toast timer

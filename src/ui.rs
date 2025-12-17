@@ -99,7 +99,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     let items: Vec<ListItem> = filtered_services
         .iter()
         .map(|service| {
-            let style = match service.status {
+            let status = service.status.lock().unwrap().clone();
+            let style = match status {
                 Status::Starting => Style::default().fg(Color::Yellow),
                 Status::Stopping => Style::default().fg(Color::Red),
                 Status::Pulling => Style::default().fg(Color::Cyan),
@@ -108,15 +109,15 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
                 Status::Error => Style::default().fg(Color::White),
                 Status::DaemonNotRunning => Style::default().fg(Color::White),
             };
-            let display_text = if service.status == Status::Pulling {
+            let display_text = if status == Status::Pulling {
                 let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let spinner_idx = (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_millis() / 100) % spinner_chars.len() as u128;
-                format!("{}: {} {}", service.name, service.status, spinner_chars[spinner_idx as usize])
+                format!("{}: {} {}", service.name, status, spinner_chars[spinner_idx as usize])
             } else {
-                format!("{}: {}", service.name, service.status)
+                format!("{}: {}", service.name, status)
             };
             ListItem::new(display_text).style(style)
         })
@@ -135,8 +136,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     };
 
     let highlight_style = if let Some(i) = app.state.selected() {
-        let status = &app.services[i].status;
-        if *status == Status::Starting || *status == Status::Stopping || *status == Status::Pulling {
+        let status = app.services[i].status.lock().unwrap().clone();
+        if status == Status::Starting || status == Status::Stopping || status == Status::Pulling {
             Style::default().fg(Color::Black).bg(Color::Yellow)
         } else {
             Style::default().fg(Color::Black).bg(Color::Blue)

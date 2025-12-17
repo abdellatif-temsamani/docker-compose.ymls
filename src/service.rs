@@ -4,7 +4,7 @@ use crate::status::Status;
 #[derive(Clone)]
 pub struct Service {
     pub name: String,
-    pub status: Status,
+    pub status: Arc<Mutex<Status>>,
     pub logs: Arc<Mutex<String>>,
 }
 

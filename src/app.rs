@@ -141,7 +141,7 @@ impl App {
                 .into_iter()
                 .map(|name| Service {
                     name,
-                    status: Status::Stopped,
+                    status: Arc::new(Mutex::new(Status::Stopped)),
                     logs: Arc::new(Mutex::new(String::new())),
                 })
                 .collect(),
@@ -162,6 +162,7 @@ impl App {
         };
         app.refresh_statuses(); // Check current statuses
         app.populate_initial_logs(); // Populate logs for running services
+        app.start_event_listeners(); // Start listening to docker events
         app
     }
 
@@ -171,7 +172,7 @@ impl App {
         }
 
         for service in &mut self.services {
-            if service.status == Status::Running {
+            if *service.status.lock().unwrap() == Status::Running {
                 // For running services, show a status summary that looks like startup logs
                 let service_name = service.name.clone();
                 let container_dir = format!("containers/{}", service_name);
@@ -252,6 +253,53 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+    }
+
+    pub fn start_event_listeners(&self) {
+        for service in &self.services {
+            let service_name = service.name.clone();
+            let status_clone = Arc::clone(&service.status);
+
+            std::thread::spawn(move || {
+                let mut cmd = std::process::Command::new("docker");
+                cmd.arg("events")
+                    .arg("--filter")
+                    .arg(format!("label=com.docker.compose.project={}", service_name))
+                    .arg("--format")
+                    .arg("{{.Action}}\t{{.Actor.Attributes.name}}");
+
+                match cmd.stdout(std::process::Stdio::piped()).spawn() {
+                    Ok(mut child) => {
+                        if let Some(stdout) = child.stdout.take() {
+                            use std::io::{BufRead, BufReader};
+                            let reader = BufReader::new(stdout);
+                            for line in reader.lines() {
+                                if let Ok(line) = line {
+                                    let parts: Vec<&str> = line.split('\t').collect();
+                                    if parts.len() >= 2 {
+                                        let action = parts[0];
+                                        let _container_name = parts[1];
+
+                                        let new_status = match action {
+                                            "start" => Status::Running,
+                                            "stop" | "die" => Status::Stopped,
+                                            "create" => Status::Starting,
+                                            "destroy" => Status::Stopped,
+                                            _ => continue, // Ignore other events
+                                        };
+
+                                        *status_clone.lock().unwrap() = new_status;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // If docker events fails, fall back to polling
+                    }
+                }
+            });
+        }
     }
 
 
