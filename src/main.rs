@@ -27,9 +27,9 @@ use toast::create_toast_widget;
 
 fn main() -> io::Result<()> {
     let (width, height) = terminal::size()?;
-    if width < 50 || height < 10 {
+    if width < 40 || height < 12 {
         eprintln!(
-            "Terminal too small. Minimum size: 50x10. Current: {}x{}",
+            "Terminal too small. Minimum size: 40x12. Current: {}x{}",
             width, height
         );
         std::process::exit(1);
@@ -41,20 +41,34 @@ fn main() -> io::Result<()> {
     app_result
 }
 
+
+
 fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
     let mut app = App::new();
     app.next(); // select first
 
     loop {
         terminal.draw(|frame| {
-            let chunks = if app.search_mode || app.daemon_start_mode {
+            // Responsive layout based on terminal height
+            let frame_height = frame.area().height;
+            let controls_height = if frame_height < 15 {
+                1 // Minimum 1 line for controls on very small terminals
+            } else if frame_height < 20 {
+                2 // 2 lines on small terminals
+            } else if frame_height < 30 {
+                3 // 3 lines on medium terminals
+            } else {
+                4 // 4 lines on large terminals
+            };
+
+            let chunks = if app.search_mode {
                 Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
                         Constraint::Length(3),
                         Constraint::Length(3),
                         Constraint::Min(5),
-                        Constraint::Percentage(60),
+                        Constraint::Min(controls_height),
                     ])
                     .split(frame.area())
             } else {
@@ -62,8 +76,8 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                     .direction(Direction::Vertical)
                     .constraints([
                         Constraint::Length(3),
-                        Constraint::Percentage(60),
-                        Constraint::Percentage(40),
+                        Constraint::Min(controls_height),
+                        Constraint::Length(controls_height),
                     ])
                     .split(frame.area())
             };
@@ -84,39 +98,41 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                     let style = match service.status {
                         Status::Starting => Style::default().fg(Color::Yellow),
                         Status::Stopping => Style::default().fg(Color::Red),
+                        Status::Pulling => Style::default().fg(Color::Cyan),
                         Status::Running => Style::default().fg(Color::Green),
                         Status::Stopped => Style::default().fg(Color::Gray),
                         Status::Error => Style::default().fg(Color::White),
                         Status::DaemonNotRunning => Style::default().fg(Color::White),
                     };
-                    ListItem::new(format!("{}: {}", service.name, service.status)).style(style)
+                    let display_text = if service.status == Status::Pulling {
+                        let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                        let spinner_idx = (std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() / 100) % spinner_chars.len() as u128;
+                        format!("{}: {} {}", service.name, service.status, spinner_chars[spinner_idx as usize])
+                    } else {
+                        format!("{}: {}", service.name, service.status)
+                    };
+                    ListItem::new(display_text).style(style)
                 })
                 .collect();
 
             let clock_start = 0;
-            let list_start = if app.search_mode || app.daemon_start_mode {
+            let list_start = if app.search_mode {
                 2
             } else {
                 1
             };
-            let help_start = if app.search_mode || app.daemon_start_mode {
+            let help_start = if app.search_mode {
                 3
             } else {
                 2
             };
 
-            let top_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(34),
-                ])
-                .split(chunks[clock_start]);
-
             let highlight_style = if let Some(i) = app.state.selected() {
                 let status = &app.services[i].status;
-                if *status == Status::Starting || *status == Status::Stopping {
+                if *status == Status::Starting || *status == Status::Stopping || *status == Status::Pulling {
                     Style::default().fg(Color::Black).bg(Color::Yellow)
                 } else {
                     Style::default().fg(Color::Black).bg(Color::Blue)
@@ -135,56 +151,58 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                 .highlight_style(highlight_style)
                 .highlight_symbol(">> ");
 
+            // Compact status bar combining time and docker status
             let now = Local::now();
-            let clock = Paragraph::new(format!("{}", now.format("%H:%M:%S")))
-                .block(
-                    Block::default()
-                        .title("Time")
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue)),
-                )
-                .style(Style::default().fg(Color::White));
-            frame.render_widget(clock, top_chunks[0]);
-
             let docker_status_text = if app.docker_daemon_running {
-                "Running"
+                "● Running"
             } else {
-                "Not Running"
+                "● Stopped"
             };
             let docker_color = if app.docker_daemon_running {
                 Color::Green
             } else {
                 Color::Red
             };
-            let docker_status = Paragraph::new(format!("Docker: {}", docker_status_text))
-                .block(
-                    Block::default()
-                        .title("Daemon")
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue)),
-                )
-                .style(Style::default().fg(docker_color));
-            frame.render_widget(docker_status, top_chunks[1]);
-
             let docker_cli_text = if app.docker_command_available {
-                "Available"
+                "● Docker CLI OK"
             } else {
-                "Not Available"
+                "● Docker CLI N/A"
             };
             let docker_cli_color = if app.docker_command_available {
                 Color::Green
             } else {
                 Color::Red
             };
-            let docker_cli = Paragraph::new(format!("CLI: {}", docker_cli_text))
+
+            let docker_compose_text = if app.docker_compose_available {
+                "● Compose OK"
+            } else {
+                "● Compose N/A"
+            };
+            let docker_compose_color = if app.docker_compose_available {
+                Color::Green
+            } else {
+                Color::Red
+            };
+
+            let status_line = Line::from(vec![
+                Span::styled(format!("{} ", now.format("%H:%M:%S")), Style::default().fg(Color::White)),
+                Span::styled("| ", Style::default().fg(Color::Gray)),
+                Span::styled(docker_status_text, Style::default().fg(docker_color)),
+                Span::styled(" | ", Style::default().fg(Color::Gray)),
+                Span::styled(docker_cli_text, Style::default().fg(docker_cli_color)),
+                Span::styled(" | ", Style::default().fg(Color::Gray)),
+                Span::styled(docker_compose_text, Style::default().fg(docker_compose_color)),
+            ]);
+
+            let status_bar = Paragraph::new(status_line)
                 .block(
                     Block::default()
-                        .title("Docker CLI")
+                        .title("Status")
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Blue)),
-                )
-                .style(Style::default().fg(docker_cli_color));
-            frame.render_widget(docker_cli, top_chunks[2]);
+                );
+            frame.render_widget(status_bar, chunks[clock_start]);
 
             if app.search_mode {
                 let search = Paragraph::new(format!("/{}", app.search_query))
@@ -196,40 +214,43 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                     )
                     .style(Style::default().fg(Color::White));
                 frame.render_widget(search, chunks[1]);
-            } else if app.daemon_start_mode {
-                let password_display = "*".repeat(app.password_input.len());
-                let password_input = Paragraph::new(format!("Password: {}", password_display))
-                    .block(
-                        Block::default()
-                            .title("Start Docker Daemon")
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(Color::Blue)),
-                    )
-                    .style(Style::default().fg(Color::White));
-                frame.render_widget(password_input, chunks[1]);
             }
 
+            // Responsive horizontal split based on terminal width
+            let frame_width = frame.area().width;
+            let services_percentage = if frame_width < 80 {
+                25 // Narrow terminals: smaller services panel
+            } else if frame_width < 120 {
+                30 // Medium terminals: standard split
+            } else {
+                35 // Wide terminals: larger services panel for better readability
+            };
+
             let [list_rect, logs_rect] =
-                Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                Layout::horizontal([Constraint::Percentage(services_percentage), Constraint::Percentage(100 - services_percentage)])
                     .areas(chunks[list_start]);
             frame.render_stateful_widget(list, list_rect, &mut app.state);
 
             let (logs_text, log_line_count) = {
-                let logs_guard = app.logs.lock().unwrap();
-                if let Some(i) = app.state.selected() {
-                    let service_name = &app.services[i].name;
-                    if let Some(buf) = logs_guard.get(service_name) {
-                        let logs = buf.get_recent_logs(200); // Get more logs for scrolling
-                        if logs.is_empty() {
-                            ("No logs yet - start the service to see activity".to_string(), 1)
+                // Use safe locking for logs display
+                if let Some(logs_guard) = crate::actions::lock_logs(&app.logs) {
+                    if let Some(i) = app.state.selected() {
+                        let service_name = &app.services[i].name;
+                        if let Some(buf) = logs_guard.get(service_name) {
+                            let logs = buf.get_recent_logs(200); // Get more logs for scrolling
+                            if logs.is_empty() {
+                                ("No logs yet - start the service to see activity".to_string(), 1)
+                            } else {
+                                (logs.join("\n"), logs.len() as u16)
+                            }
                         } else {
-                            (logs.join("\n"), logs.len() as u16)
+                            ("No logs yet - start the service to see activity".to_string(), 1)
                         }
                     } else {
-                        ("No logs yet - start the service to see activity".to_string(), 1)
+                        ("Select a service to view logs".to_string(), 1)
                     }
                 } else {
-                    ("Select a service to view logs".to_string(), 1)
+                    ("Unable to access logs".to_string(), 1)
                 }
             };
 
@@ -238,28 +259,22 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
             app.log_viewport_height = logs_height; // Store for key handling
             app.log_total_lines = log_line_count; // Store for key handling
 
-            // Auto-scroll logic: scroll to bottom if auto-scroll is enabled
-            if app.log_auto_scroll && log_line_count > logs_height {
-                app.log_scroll_position = log_line_count.saturating_sub(logs_height);
-            }
-
-            // Update scrollbar state
+            // Update scrollbar content length (matching Ratatui example pattern)
             app.log_scrollbar_state = app.log_scrollbar_state.content_length(log_line_count as usize);
-            app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
 
             let logs_widget = Paragraph::new(logs_text)
                 .block(
                     Block::default()
                         .title("Container Logs")
                         .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue)),
+                        .border_style(Style::default().fg(Color::Green)),
                 )
                 .style(Style::default().fg(Color::White))
                 .wrap(ratatui::widgets::Wrap { trim: true })
                 .scroll((app.log_scroll_position, 0));
             frame.render_widget(logs_widget, logs_rect);
 
-            // Render scrollbar
+            // Render scrollbar (matching Ratatui example pattern)
             frame.render_stateful_widget(
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
                     .begin_symbol(Some("↑"))
@@ -269,28 +284,59 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
             );
 
             let help_text = Line::from(vec![
-                Span::styled("j/k/arrows: ", Style::default().fg(Color::Yellow)),
-                Span::styled("navigate | ", Style::default().fg(Color::White)),
-                Span::styled("Shift+J/K: ", Style::default().fg(Color::Cyan)),
-                Span::styled("scroll logs | ", Style::default().fg(Color::White)),
-                Span::styled("PgUp/PgDn/Home/End: ", Style::default().fg(Color::Magenta)),
-                Span::styled("page nav | ", Style::default().fg(Color::White)),
-                Span::styled("space: ", Style::default().fg(Color::Green)),
-                Span::styled("toggle start/stop | ", Style::default().fg(Color::White)),
-                Span::styled("r: ", Style::default().fg(Color::Red)),
-                Span::styled("refresh | ", Style::default().fg(Color::White)),
-                Span::styled("q: ", Style::default().fg(Color::Red)),
+                Span::styled("j/k/↑↓/Tab:", Style::default().fg(Color::Yellow)),
+                Span::styled("nav ", Style::default().fg(Color::White)),
+                Span::styled("space:", Style::default().fg(Color::Green)),
+                Span::styled("toggle ", Style::default().fg(Color::White)),
+                Span::styled("J/K:", Style::default().fg(Color::Cyan)),
+                Span::styled("scroll ", Style::default().fg(Color::White)),
+                Span::styled("PgUp/Dn:", Style::default().fg(Color::Magenta)),
+                Span::styled("page ", Style::default().fg(Color::White)),
+                Span::styled("Home/End:", Style::default().fg(Color::Magenta)),
+                Span::styled("top/bottom ", Style::default().fg(Color::White)),
+                Span::styled("/:", Style::default().fg(Color::Blue)),
+                Span::styled("search ", Style::default().fg(Color::White)),
+                Span::styled("r:", Style::default().fg(Color::Red)),
+                Span::styled("refresh ", Style::default().fg(Color::White)),
+                Span::styled("d:", Style::default().fg(Color::Yellow)),
+                Span::styled("daemon ", Style::default().fg(Color::White)),
+                Span::styled("q:", Style::default().fg(Color::Red)),
                 Span::styled("quit", Style::default().fg(Color::White)),
             ]);
             let help = Paragraph::new(help_text)
                 .block(
                     Block::default()
+                        .title("Controls")
                         .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue)),
+                        .border_style(Style::default().fg(Color::Gray)),
                 )
                 .wrap(ratatui::widgets::Wrap { trim: true });
 
             frame.render_widget(help, chunks[help_start]);
+
+            if app.daemon_start_mode {
+                let password_display = "*".repeat(app.password_input.len());
+                let password_input = Paragraph::new(format!("Password: {}", password_display))
+                    .block(
+                        Block::default()
+                            .title("Start Docker Daemon")
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Yellow))
+                            .style(Style::default().bg(Color::Black)),
+                    )
+                    .style(Style::default().fg(Color::White).bg(Color::Black));
+
+                // Center the password input as an overlay
+                let input_width = 50;
+                let input_height = 5;
+                let input_area = Rect {
+                    x: (frame.area().width.saturating_sub(input_width)) / 2,
+                    y: (frame.area().height.saturating_sub(input_height)) / 2,
+                    width: input_width.min(frame.area().width),
+                    height: input_height.min(frame.area().height),
+                };
+                frame.render_widget(password_input, input_area);
+            }
 
             if let Some(toast) = &app.toast {
                 let toast_width = 50;
@@ -361,45 +407,34 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                             _ => {}
                         },
                         _ => match key.code {
-                            // Log scrolling shortcuts (must come before navigation)
-                            KeyCode::Char('K') => { // Shift+K (uppercase)
-                                app.log_auto_scroll = false;
-                                app.log_scroll_position = app.log_scroll_position.saturating_sub(1);
-                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
-                            }
-                            KeyCode::Char('J') => { // Shift+J (uppercase)
-                                app.log_scroll_position = app.log_scroll_position.saturating_add(1);
-                                app.log_auto_scroll = false;
-                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
-                            }
-                            // Page up/down for larger scrolls
-                            KeyCode::PageUp => {
-                                let scroll_amount = (app.log_viewport_height / 2).max(1);
-                                app.log_auto_scroll = false;
-                                app.log_scroll_position = app.log_scroll_position.saturating_sub(scroll_amount);
-                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
-                            }
-                            KeyCode::PageDown => {
-                                let scroll_amount = (app.log_viewport_height / 2).max(1);
-                                app.log_scroll_position = app.log_scroll_position.saturating_add(scroll_amount);
-                                app.log_auto_scroll = false;
-                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
-                            }
-                            // Home/End for quick navigation
-                            KeyCode::Home => {
-                                app.log_auto_scroll = false;
-                                app.log_scroll_position = 0;
-                                app.log_scrollbar_state = app.log_scrollbar_state.position(0);
-                            }
-                            KeyCode::End => {
-                                if app.log_total_lines > app.log_viewport_height {
-                                    app.log_scroll_position = app.log_total_lines.saturating_sub(app.log_viewport_height);
-                                } else {
-                                    app.log_scroll_position = 0;
-                                }
-                                app.log_auto_scroll = true; // Re-enable auto-scroll at bottom
-                                app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
-                            }
+                             // Log scrolling shortcuts (must come before navigation)
+                              KeyCode::Char('K') => { // Shift+K (uppercase)
+                                  app.log_scroll_position = app.log_scroll_position.saturating_sub(1);
+                                  app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                              }
+                              KeyCode::Char('J') => { // Shift+J (uppercase)
+                                  app.log_scroll_position = app.log_scroll_position.saturating_add(1);
+                                  app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                              }
+                              // Page up/down for larger scrolls
+                              KeyCode::PageUp => {
+                                  app.log_scroll_position = app.log_scroll_position.saturating_sub(10);
+                                  app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                              }
+                              KeyCode::PageDown => {
+                                  app.log_scroll_position = app.log_scroll_position.saturating_add(10);
+                                  app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                              }
+                              // Home/End for quick navigation
+                              KeyCode::Home => {
+                                  app.log_scroll_position = 0;
+                                  app.log_scrollbar_state = app.log_scrollbar_state.position(0);
+                              }
+                              KeyCode::End => {
+                                  // Scroll to bottom - use saturating_sub like in example
+                                  app.log_scroll_position = app.log_total_lines.saturating_sub(app.log_viewport_height);
+                                  app.log_scrollbar_state = app.log_scrollbar_state.position(app.log_scroll_position as usize);
+                              }
                             // Navigation (must come after scrolling shortcuts)
                             KeyCode::Char('j') | KeyCode::Down => {
                                 app.next();

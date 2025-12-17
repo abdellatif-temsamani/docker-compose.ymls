@@ -23,7 +23,7 @@ impl Default for LogBuffer {
     fn default() -> Self {
         Self {
             entries: Vec::new(),
-            max_capacity: 1000, // Keep last 1000 log entries
+            max_capacity: 500, // Reduced from 1000 to save memory
         }
     }
 }
@@ -53,11 +53,7 @@ impl LogBuffer {
     }
 
     pub fn get_recent_logs(&self, limit: usize) -> Vec<String> {
-        let start = if self.entries.len() > limit {
-            self.entries.len() - limit
-        } else {
-            0
-        };
+        let start = self.entries.len().saturating_sub(limit);
 
         self.entries[start..]
             .iter()
@@ -81,14 +77,15 @@ pub struct App {
     pub search_query: String,
     pub docker_daemon_running: bool,
     pub docker_command_available: bool,
+    pub docker_compose_available: bool,
     pub daemon_start_mode: bool,
     pub password_input: String,
     pub logs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, LogBuffer>>>,
     pub log_scroll_position: u16,
-    pub log_auto_scroll: bool,
     pub log_scrollbar_state: ratatui::widgets::ScrollbarState,
     pub log_viewport_height: u16, // Height of the logs viewport (for scroll calculations)
     pub log_total_lines: u16, // Total number of log lines (for scroll calculations)
+    pub first_status_check: bool, // Track if this is the first status check
 }
 
 fn check_docker_daemon() -> bool {
@@ -176,7 +173,7 @@ impl App {
                 .into_iter()
                 .map(|name| Service {
                     name,
-                    status: Status::Error,
+                    status: Status::Stopped,
                 })
                 .collect(),
             toast,
@@ -186,14 +183,15 @@ impl App {
             search_query: String::new(),
             docker_daemon_running: docker_running,
             docker_command_available,
+            docker_compose_available,
             daemon_start_mode: false,
             password_input: String::new(),
-            logs: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            log_scroll_position: 0,
-            log_auto_scroll: true,
-            log_scrollbar_state: ratatui::widgets::ScrollbarState::default(),
-            log_viewport_height: 10, // Default, will be updated in draw
-            log_total_lines: 0, // Will be updated in draw
+             logs: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+             log_scroll_position: 0,
+             log_scrollbar_state: ratatui::widgets::ScrollbarState::default(),
+             log_viewport_height: 10, // Default, will be updated in draw
+             log_total_lines: 0, // Will be updated in draw
+             first_status_check: true,
         };
         app.refresh_statuses(); // Check current statuses
         app.refresh_logs(); // Load logs for selected
@@ -212,9 +210,8 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
-        // Reset scroll position and enable auto-scroll when switching services
+        // Reset scroll position when switching services
         self.log_scroll_position = 0;
-        self.log_auto_scroll = true;
         self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
 
@@ -230,9 +227,8 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
-        // Reset scroll position and enable auto-scroll when switching services
+        // Reset scroll position when switching services
         self.log_scroll_position = 0;
-        self.log_auto_scroll = true;
         self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
 }

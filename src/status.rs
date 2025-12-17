@@ -6,6 +6,7 @@ pub enum Status {
     Stopped,
     Starting,
     Stopping,
+    Pulling,
     Error,
     DaemonNotRunning,
 }
@@ -17,6 +18,7 @@ impl fmt::Display for Status {
             Status::Stopped => write!(f, "stopped"),
             Status::Starting => write!(f, "starting"),
             Status::Stopping => write!(f, "stopping"),
+            Status::Pulling => write!(f, "pulling images"),
             Status::Error => write!(f, "error"),
             Status::DaemonNotRunning => write!(f, "daemon not running"),
         }
