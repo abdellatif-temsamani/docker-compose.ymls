@@ -144,8 +144,8 @@ impl App {
     }
 
     pub fn load_states(&mut self) {
-        if let Ok(content) = fs::read_to_string("states.json") {
-            if let Ok(saved_services) =
+        if let Ok(content) = fs::read_to_string("states.json")
+            && let Ok(saved_services) =
                 serde_json::from_str::<Vec<crate::service::Service>>(&content)
             {
                 for saved in saved_services {
@@ -154,7 +154,6 @@ impl App {
                     }
                 }
             }
-        }
     }
 
     pub fn start_service(&mut self) {
@@ -374,12 +373,11 @@ fn get_status(name: String) -> Status {
                 // Check if any container is running
                 let mut has_running = false;
                 for line in lines {
-                    if let Some(status_part) = line.split('\t').nth(1) {
-                        if status_part.starts_with("Up") {
+                    if let Some(status_part) = line.split('\t').nth(1)
+                        && status_part.starts_with("Up") {
                             has_running = true;
                             break;
                         }
-                    }
                 }
                 if has_running {
                     Status::Running

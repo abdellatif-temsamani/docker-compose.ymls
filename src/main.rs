@@ -275,8 +275,8 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
         })?;
 
         if poll(Duration::from_secs(1))? {
-            if let event::Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            if let event::Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('q') if !app.search_mode && !app.daemon_start_mode => {
                             return Ok(());
@@ -357,7 +357,6 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                         },
                     }
                 }
-            }
         } else {
             // Timeout: auto-refresh statuses
             app.refresh_statuses();
