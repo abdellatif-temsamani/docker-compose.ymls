@@ -1,6 +1,8 @@
+mod actions;
 mod app;
 mod service;
 mod status;
+mod toast;
 
 use std::io;
 
@@ -12,7 +14,7 @@ use ratatui::{
         terminal,
     },
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -21,8 +23,7 @@ use std::time::Duration;
 use app::App;
 use service::Service;
 use status::Status;
-
-
+use toast::create_toast_widget;
 
 fn main() -> io::Result<()> {
     let (width, height) = terminal::size()?;
@@ -251,12 +252,6 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
             frame.render_widget(help, chunks[help_start]);
 
             if let Some(toast) = &app.toast {
-                let (bg_color, fg_color, border_color) = match toast.state {
-                    crate::status::ToastState::Success => (Color::Green, Color::White, Color::Green),
-                    crate::status::ToastState::Warning => (Color::Yellow, Color::Black, Color::Yellow),
-                    crate::status::ToastState::Error => (Color::Red, Color::White, Color::Red),
-                    crate::status::ToastState::Info => (Color::Blue, Color::Black, Color::Black),
-                };
                 let toast_width = 50;
                 let toast_height = 3;
                 let toast_area = Rect {
@@ -265,15 +260,7 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                     width: toast_width.min(frame.area().width),
                     height: toast_height,
                 };
-                let toast_widget = Paragraph::new(toast.message.clone())
-                    .block(
-                        Block::default()
-                            .title("Notification")
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD))
-                            .style(Style::default().bg(bg_color).fg(fg_color)),
-                    )
-                    .wrap(ratatui::widgets::Wrap { trim: true });
+                let toast_widget = create_toast_widget(toast);
                 frame.render_widget(toast_widget, toast_area);
             }
 
@@ -353,7 +340,7 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                             KeyCode::Char('r') => {
                                 app.refresh_statuses();
                                 app.refresh_logs();
-                                app.toast = Some(crate::app::Toast {
+                                app.toast = Some(crate::toast::Toast {
                                     state: crate::status::ToastState::Info,
                                     message: "Refreshed statuses".to_string(),
                                 });
