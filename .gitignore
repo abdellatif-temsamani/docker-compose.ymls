@@ -1,8 +1,2 @@
 **/db
-odoo-14-docker-compose/etc/odoo-server.log
-odoo-14-docker-compose/postgresql/
-odoo-14-docker-compose/etc/addons/
-odoo-14-docker-compose/etc/sessions/
-odoo-14-docker-compose/etc/filestore/
-
 target/

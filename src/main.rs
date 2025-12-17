@@ -73,6 +73,7 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
                         Status::Running => Style::default().fg(Color::Green),
                         Status::Stopped => Style::default().fg(Color::Gray),
                         Status::Error => Style::default().fg(Color::White),
+                        Status::DaemonNotRunning => Style::default().fg(Color::White),
                     };
                     ListItem::new(format!("{}: {}", service.name, service.status)).style(style)
                 })

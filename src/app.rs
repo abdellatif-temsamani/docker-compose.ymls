@@ -58,7 +58,7 @@ fn get_service_names() -> Vec<String> {
                 })
                 .collect()
         }
-        Err(_) => vec!["mysql".to_string(), "phpmyadmin".to_string(), "postgres".to_string(), "redis".to_string()], // fallback
+        Err(_) => vec!["adminer".to_string(), "mysql".to_string(), "phpmyadmin".to_string(), "postgres".to_string(), "redis".to_string()], // fallback
     }
 }
 
@@ -98,13 +98,19 @@ impl App {
 
     pub fn refresh_statuses(&mut self) {
         self.docker_daemon_running = check_docker_daemon();
-        for service in &mut self.services {
-            let current_status = get_status(service.name.clone());
-            // Only update if transitioning to expected status or not in transition
-            if (service.status == Status::Starting && current_status == Status::Running) ||
-               (service.status == Status::Stopping && current_status == Status::Stopped) ||
-               (service.status != Status::Starting && service.status != Status::Stopping) {
-                service.status = current_status;
+        if !self.docker_daemon_running {
+            for service in &mut self.services {
+                service.status = Status::DaemonNotRunning;
+            }
+        } else {
+            for service in &mut self.services {
+                let current_status = get_status(service.name.clone());
+                // Only update if transitioning to expected status or not in transition
+                if (service.status == Status::Starting && current_status == Status::Running) ||
+                   (service.status == Status::Stopping && current_status == Status::Stopped) ||
+                   (service.status != Status::Starting && service.status != Status::Stopping) {
+                    service.status = current_status;
+                }
             }
         }
     }
@@ -125,6 +131,13 @@ impl App {
 
     pub fn start_service(&mut self) {
         if let Some(i) = self.state.selected() {
+            if !self.docker_daemon_running {
+                self.last_actions.push_back("Cannot start service: Docker daemon not running".to_string());
+                if self.last_actions.len() > 20 {
+                    self.last_actions.pop_front();
+                }
+                return;
+            }
             let service = &mut self.services[i];
             let current_status = get_status(service.name.clone());
             if current_status == Status::Running {
@@ -141,7 +154,7 @@ impl App {
                 .arg("--quiet-pull")
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .current_dir(format!("../{}", service.name))
+                .current_dir(format!("../containers/{}", service.name))
                 .spawn();
             self.last_actions.push_back(format!("Starting {}", service.name));
             if self.last_actions.len() > 20 {
@@ -152,6 +165,13 @@ impl App {
 
     pub fn stop_service(&mut self) {
         if let Some(i) = self.state.selected() {
+            if !self.docker_daemon_running {
+                self.last_actions.push_back("Cannot stop service: Docker daemon not running".to_string());
+                if self.last_actions.len() > 20 {
+                    self.last_actions.pop_front();
+                }
+                return;
+            }
             let service = &mut self.services[i];
             let current_status = get_status(service.name.clone());
             if current_status != Status::Running {
@@ -166,7 +186,7 @@ impl App {
                 .arg("down")
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .current_dir(format!("../{}", service.name))
+                .current_dir(format!("../containers/{}", service.name))
                 .spawn();
             self.last_actions.push_back(format!("Stopping {}", service.name));
             if self.last_actions.len() > 20 {
