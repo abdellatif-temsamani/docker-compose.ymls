@@ -83,6 +83,11 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
             let help_start = if app.search_mode { 3 } else { 2 };
             let output_start = if app.search_mode { 4 } else { 3 };
 
+            let top_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(33), Constraint::Percentage(33), Constraint::Percentage(34)])
+                .split(chunks[clock_start]);
+
             let highlight_style = if let Some(i) = app.state.selected() {
                 let status = &app.services[i].status;
                 if *status == Status::Starting || *status == Status::Stopping {
@@ -103,7 +108,21 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
             let clock = Paragraph::new(format!("{}", now.format("%H:%M:%S")))
                 .block(Block::default().title("Time").borders(Borders::ALL).border_style(Style::default().fg(Color::Blue)))
                 .style(Style::default().fg(Color::White));
-            frame.render_widget(clock, chunks[clock_start]);
+            frame.render_widget(clock, top_chunks[0]);
+
+            let docker_status_text = if app.docker_daemon_running { "Running" } else { "Not Running" };
+            let docker_color = if app.docker_daemon_running { Color::Green } else { Color::Red };
+            let docker_status = Paragraph::new(format!("Docker: {}", docker_status_text))
+                .block(Block::default().title("Daemon").borders(Borders::ALL).border_style(Style::default().fg(Color::Blue)))
+                .style(Style::default().fg(docker_color));
+            frame.render_widget(docker_status, top_chunks[1]);
+
+            let docker_cli_text = if app.docker_command_available { "Available" } else { "Not Available" };
+            let docker_cli_color = if app.docker_command_available { Color::Green } else { Color::Red };
+            let docker_cli = Paragraph::new(format!("CLI: {}", docker_cli_text))
+                .block(Block::default().title("Docker CLI").borders(Borders::ALL).border_style(Style::default().fg(Color::Blue)))
+                .style(Style::default().fg(docker_cli_color));
+            frame.render_widget(docker_cli, top_chunks[2]);
 
             if app.search_mode {
                 let search = Paragraph::new(format!("/{}", app.search_query))

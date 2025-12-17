@@ -13,6 +13,8 @@ pub struct App {
 
     pub search_mode: bool,
     pub search_query: String,
+    pub docker_daemon_running: bool,
+    pub docker_command_available: bool,
 }
 
 fn check_docker_available() -> bool {
@@ -23,9 +25,25 @@ fn check_docker_available() -> bool {
         .unwrap_or(false)
 }
 
+fn check_docker_daemon() -> bool {
+    Command::new("docker")
+        .arg("info")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+fn check_docker_command() -> bool {
+    Command::new("docker")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 fn get_service_names() -> Vec<String> {
     // Scan ../ for directories containing docker-compose.yml
-    match std::fs::read_dir("../") {
+    match std::fs::read_dir("../containers/") {
         Ok(entries) => {
             entries
                 .filter_map(|entry| entry.ok())
@@ -48,6 +66,8 @@ impl App {
     pub fn new() -> Self {
         let service_names = get_service_names();
 
+        let docker_running = check_docker_daemon();
+        let docker_command_available = check_docker_command();
         let mut app = Self {
             state: ratatui::widgets::ListState::default(),
             services: service_names.into_iter().map(|name| Service { name, status: Status::Error }).collect(),
@@ -56,12 +76,20 @@ impl App {
                 if !check_docker_available() {
                     dq.push_back("Warning: Docker Compose not found. Services may not work.".to_string());
                 }
+                if !docker_command_available {
+                    dq.push_back("Warning: Docker CLI not found.".to_string());
+                }
+                if !docker_running {
+                    dq.push_back("Warning: Docker daemon not running.".to_string());
+                }
                 dq.push_back("Welcome to Docker Manager".to_string());
                 dq
             },
 
             search_mode: false,
             search_query: String::new(),
+            docker_daemon_running: docker_running,
+            docker_command_available,
         };
         app.load_states(); // Load saved states
         app.refresh_statuses(); // Check current statuses
@@ -69,6 +97,7 @@ impl App {
     }
 
     pub fn refresh_statuses(&mut self) {
+        self.docker_daemon_running = check_docker_daemon();
         for service in &mut self.services {
             let current_status = get_status(service.name.clone());
             // Only update if transitioning to expected status or not in transition
