@@ -17,30 +17,64 @@ impl App {
             for service in &mut self.services {
                 service.status = Status::DaemonNotRunning;
             }
-    } else {
-        // Use batch status checking for better performance
-        // Always check on first run or when daemon changed or services are in transition
-        if self.first_status_check ||
-           daemon_changed ||
-           self.services.iter().any(|s| matches!(s.status, Status::Starting | Status::Stopping | Status::Pulling)) {
-            let service_names: Vec<String> = self.services.iter().map(|s| s.name.clone()).collect();
-            let batch_statuses = get_batch_statuses(&service_names);
+        } else {
+            // Use batch status checking for better performance
+            // Always check on first run or when daemon changed or services are in transition
+            if self.first_status_check ||
+                daemon_changed ||
+                self.services.iter().any(|s| matches!(s.status, Status::Starting | Status::Stopping | Status::Pulling)) {
+                let service_names: Vec<String> = self.services.iter().map(|s| s.name.clone()).collect();
+                let batch_statuses = get_batch_statuses(&service_names);
 
-            for service in &mut self.services {
-                if let Some(current_status) = batch_statuses.get(&service.name).cloned() {
-                    // Only update if transitioning to expected status or not in transition
-                    if (service.status == Status::Starting && current_status == Status::Running)
-                        || (service.status == Status::Stopping && current_status == Status::Stopped)
-                        || (service.status == Status::Pulling && current_status == Status::Running)
-                        || (service.status != Status::Starting && service.status != Status::Stopping && service.status != Status::Pulling)
-                    {
-                        service.status = current_status;
+                for service in &mut self.services {
+                    if let Some(actual_status) = batch_statuses.get(&service.name).cloned() {
+                        // Handle state transitions based on current state and actual container status
+                        match service.status {
+                            Status::Pulling => {
+                                // If pulling and containers are now running, transition is complete
+                                if actual_status == Status::Running {
+                                    service.status = Status::Running;
+                                }
+                                // If still stopped after pulling, check logs for errors
+                                else if actual_status == Status::Stopped {
+                                    let logs = service.logs.lock().unwrap();
+                                    if logs.contains("Pull failed") || logs.contains("Pull output:") && !logs.contains("Up output:") {
+                                        service.status = Status::Error;
+                                    } else {
+                                        // Pull completed but containers not yet started, transition to Starting
+                                        service.status = Status::Starting;
+                                    }
+                                }
+                                // Stay in Pulling if still transitioning
+                            }
+                            Status::Starting => {
+                                // If containers are now running, transition complete
+                                if actual_status == Status::Running {
+                                    service.status = Status::Running;
+                                }
+                                // If still stopped, check for errors
+                                else if actual_status == Status::Stopped {
+                                    service.status = Status::Error;
+                                }
+                                // Stay in Starting if still transitioning
+                            }
+                            Status::Stopping => {
+                                // If containers are now stopped, transition complete
+                                if actual_status == Status::Stopped {
+                                    service.status = Status::Stopped;
+                                }
+                                // Stay in Stopping if still transitioning
+                            }
+                            // For stable states, update to actual status
+                            _ => {
+                                service.status = actual_status;
+                            }
+                        }
                     }
                 }
+                self.first_status_check = false;
             }
-            self.first_status_check = false;
         }
-    }
     }
 
     pub fn start_service(&mut self) {
@@ -63,15 +97,17 @@ impl App {
                 self.toast_timer = 4;
                 return;
             }
+
+            // Set initial status to Pulling
             service.status = Status::Pulling;
 
-            // Clone the service name for the thread
+            // Clone necessary data for the thread
             let service_name = service.name.clone();
             let service_name_for_toast = service_name.clone();
             let container_dir = format!("containers/{}", service_name);
             let logs = Arc::clone(&service.logs);
 
-            // Spawn a thread to handle the service startup
+            // Spawn a thread to handle the service startup process
             thread::spawn(move || {
                 // Clear previous logs
                 {
@@ -79,8 +115,8 @@ impl App {
                     logs_lock.clear();
                 }
 
-                // First, pull images
-                match Command::new("docker-compose")
+                // Phase 1: Pull images
+                let pull_success = match Command::new("docker-compose")
                     .arg("pull")
                     .current_dir(&container_dir)
                     .output()
@@ -91,19 +127,25 @@ impl App {
                         let output = format!("Pull output:\n{}{}\n", stdout, stderr);
                         let mut logs_lock = logs.lock().unwrap();
                         logs_lock.push_str(&output);
-
-                        if !out.status.success() {
-                            return; // Don't proceed with starting if pull failed
-    }
-}
+                        out.status.success()
+                    }
                     Err(e) => {
                         let mut logs_lock = logs.lock().unwrap();
                         logs_lock.push_str(&format!("Pull failed: {}\n", e));
-                        return;
+                        false
                     }
+                };
+
+                if !pull_success {
+                    // Set status to Error if pull failed
+                    // Note: We can't directly modify service.status here as it's not in scope
+                    // The refresh_statuses() will handle detecting this via logs or lack of transition
+                    return;
                 }
 
-                // Then start the service
+                // Phase 2: Start containers (transition to Starting status)
+                // Note: Status transition to Starting happens in refresh_statuses()
+
                 match Command::new("docker-compose")
                     .arg("up")
                     .arg("-d")
