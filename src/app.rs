@@ -1,14 +1,25 @@
 use std::process::Command;
 
+use ratatui::widgets::ScrollbarState;
+
 use crate::service::Service;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
-use chrono;
+#[derive(Clone, Copy, PartialEq)]
+pub enum Focus {
+    Services,
+    Logs,
+}
+
+impl Default for Focus {
+    fn default() -> Self {
+        Focus::Services
+    }
+}
 
 #[derive(Clone)]
 pub struct LogEntry {
-    pub timestamp: chrono::DateTime<chrono::Utc>,
     pub service: String,
     pub message: String,
 }
@@ -29,19 +40,8 @@ impl Default for LogBuffer {
 }
 
 impl LogBuffer {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            entries: Vec::with_capacity(capacity),
-            max_capacity: capacity,
-        }
-    }
-
     pub fn add_entry(&mut self, service: String, message: String) {
-        let entry = LogEntry {
-            timestamp: chrono::Utc::now(),
-            service,
-            message,
-        };
+        let entry = LogEntry { service, message };
 
         self.entries.push(entry);
 
@@ -52,17 +52,20 @@ impl LogBuffer {
         }
     }
 
-    pub fn get_recent_logs(&self, limit: usize) -> Vec<String> {
+    pub fn get_recent_logs(&mut self, limit: usize) -> Vec<String> {
+        // Trim buffer to maintain only the most recent logs we need
+        if self.entries.len() > limit * 2 {
+            // Keep more than requested for smooth scrolling, but not too many
+            let excess = self.entries.len() - (limit * 2);
+            self.entries.drain(0..excess);
+        }
+
         let start = self.entries.len().saturating_sub(limit);
 
         self.entries[start..]
             .iter()
             .map(|entry| format!("{}: {}", entry.service, entry.message))
             .collect()
-    }
-
-    pub fn clear(&mut self) {
-        self.entries.clear();
     }
 }
 
@@ -82,9 +85,11 @@ pub struct App {
     pub password_input: String,
     pub logs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, LogBuffer>>>,
     pub log_scroll_position: u16,
-    pub log_scrollbar_state: ratatui::widgets::ScrollbarState,
+
     pub log_viewport_height: u16, // Height of the logs viewport (for scroll calculations)
-    pub log_total_lines: u16, // Total number of log lines (for scroll calculations)
+    pub log_total_lines: u16,     // Total number of log lines (for scroll calculations)
+    pub log_scrollbar_state: ScrollbarState, // Scrollbar state for logs
+    pub focus: Focus,             // Current focus area
     pub first_status_check: bool, // Track if this is the first status check
 }
 
@@ -146,25 +151,37 @@ impl App {
         let docker_compose_available = check_docker_compose_available();
 
         let (toast, toast_timer) = if !docker_compose_available {
-            (Some(Toast {
-                state: ToastState::Error,
-                message: "Docker Compose not found. Services may not work.".to_string(),
-            }), 5)
+            (
+                Some(Toast {
+                    state: ToastState::Error,
+                    message: "Docker Compose not found. Services may not work.".to_string(),
+                }),
+                5,
+            )
         } else if !docker_command_available {
-            (Some(Toast {
-                state: ToastState::Error,
-                message: "Docker CLI not found.".to_string(),
-            }), 5)
+            (
+                Some(Toast {
+                    state: ToastState::Error,
+                    message: "Docker CLI not found.".to_string(),
+                }),
+                5,
+            )
         } else if !docker_running {
-            (Some(Toast {
-                state: ToastState::Warning,
-                message: "Docker daemon not running.".to_string(),
-            }), 4)
+            (
+                Some(Toast {
+                    state: ToastState::Warning,
+                    message: "Docker daemon not running.".to_string(),
+                }),
+                4,
+            )
         } else {
-            (Some(Toast {
-                state: ToastState::Info,
-                message: "Welcome to Docker Manager".to_string(),
-            }), 3)
+            (
+                Some(Toast {
+                    state: ToastState::Info,
+                    message: "Welcome to Docker Manager".to_string(),
+                }),
+                3,
+            )
         };
 
         let mut app = Self {
@@ -186,12 +203,13 @@ impl App {
             docker_compose_available,
             daemon_start_mode: false,
             password_input: String::new(),
-             logs: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-             log_scroll_position: 0,
-             log_scrollbar_state: ratatui::widgets::ScrollbarState::default(),
-             log_viewport_height: 10, // Default, will be updated in draw
-             log_total_lines: 0, // Will be updated in draw
-             first_status_check: true,
+            logs: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            log_scroll_position: 0,
+            log_viewport_height: 10, // Default, will be updated in draw
+            log_total_lines: 0,      // Will be updated in draw
+            log_scrollbar_state: ScrollbarState::default(),
+            focus: Focus::Services,  // Start focused on services
+            first_status_check: true,
         };
         app.refresh_statuses(); // Check current statuses
         app.refresh_logs(); // Load logs for selected
@@ -231,6 +249,63 @@ impl App {
         self.log_scroll_position = 0;
         self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
+
+    pub fn focus_services(&mut self) {
+        self.focus = Focus::Services;
+    }
+
+    pub fn focus_logs(&mut self) {
+        self.focus = Focus::Logs;
+    }
+
+    pub fn scroll_logs_up(&mut self) {
+        if self.focus == Focus::Logs && self.log_scroll_position > 0 {
+            self.log_scroll_position = self.log_scroll_position.saturating_sub(1);
+            self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
+        }
+    }
+
+    pub fn scroll_logs_down(&mut self) {
+        if self.focus == Focus::Logs {
+            let max_scroll = self.log_total_lines.saturating_sub(self.log_viewport_height);
+            if self.log_scroll_position < max_scroll {
+                self.log_scroll_position += 1;
+                self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
+            }
+        }
+    }
+
+    pub fn scroll_logs_half_page_down(&mut self) {
+        if self.focus == Focus::Logs {
+            let half_page = self.log_viewport_height / 2;
+            let max_scroll = self.log_total_lines.saturating_sub(self.log_viewport_height);
+            let new_position = (self.log_scroll_position as u16 + half_page).min(max_scroll);
+            self.log_scroll_position = new_position;
+            self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
+        }
+    }
+
+    pub fn scroll_logs_half_page_up(&mut self) {
+        if self.focus == Focus::Logs {
+            let half_page = self.log_viewport_height / 2;
+            let new_position = self.log_scroll_position.saturating_sub(half_page);
+            self.log_scroll_position = new_position;
+            self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
+        }
+    }
+
+    pub fn scroll_logs_to_top(&mut self) {
+        if self.focus == Focus::Logs {
+            self.log_scroll_position = 0;
+            self.log_scrollbar_state = self.log_scrollbar_state.position(0);
+        }
+    }
+
+    pub fn scroll_logs_to_bottom(&mut self) {
+        if self.focus == Focus::Logs {
+            let max_scroll = self.log_total_lines.saturating_sub(self.log_viewport_height);
+            self.log_scroll_position = max_scroll;
+            self.log_scrollbar_state = self.log_scrollbar_state.position(max_scroll as usize);
+        }
+    }
 }
-
-
