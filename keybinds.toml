@@ -1,0 +1,15 @@
+[app]
+quit = "q"
+search = "/"
+daemon_menu = "d"
+refresh = "r"
+focus_services = "h"
+focus_logs = "l"
+
+[services]
+stop = "s"
+start = "S"
+toggle = " "
+
+[logs]
+# Currently no specific keys for logs, but placeholder for future

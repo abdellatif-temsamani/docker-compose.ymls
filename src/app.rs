@@ -1,6 +1,7 @@
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use crate::config::Keybinds;
 use crate::service::Service;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
@@ -24,7 +25,6 @@ pub enum DaemonAction {
 
 
 
-#[derive(Default)]
 pub struct App {
     pub state: ratatui::widgets::ListState,
     pub services: Vec<Service>,
@@ -42,6 +42,8 @@ pub struct App {
     pub password_input: String,
     pub focus: Focus,             // Current focus area
     pub first_status_check: bool, // Track if this is the first status check
+    pub log_scroll: u16,          // Scroll position for logs
+    pub keybinds: Keybinds,
 }
 
 fn check_docker_daemon() -> bool {
@@ -94,7 +96,7 @@ fn get_service_names() -> Vec<String> {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(keybinds: Keybinds) -> Self {
         let service_names = get_service_names();
 
         let docker_running = check_docker_daemon();
@@ -159,6 +161,8 @@ impl App {
             password_input: String::new(),
             focus: Focus::Services,  // Start focused on services
             first_status_check: true,
+            log_scroll: 0,
+            keybinds,
         };
         app.refresh_statuses(); // Check current statuses
         app.populate_initial_logs(); // Populate logs for running services

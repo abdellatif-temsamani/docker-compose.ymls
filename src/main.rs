@@ -1,5 +1,6 @@
 mod actions;
 mod app;
+mod config;
 mod event_handler;
 mod service;
 mod status;
@@ -16,6 +17,7 @@ use ratatui::crossterm::{
 };
 
 use app::App;
+use config::Keybinds;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -40,7 +42,8 @@ async fn main() -> io::Result<()> {
 
 
 async fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
-    let mut app = App::new();
+    let keybinds = Keybinds::load();
+    let mut app = App::new(keybinds);
     app.next(); // select first
 
     loop {

@@ -284,30 +284,51 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
                 .border_style(Style::default().fg(logs_border_color)),
         )
         .style(Style::default().fg(Color::White))
-        .wrap(ratatui::widgets::Wrap { trim: true });
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .scroll((app.log_scroll, 0));
     frame.render_widget(logs_widget, logs_rect);
 
 
 
-    let help_text = Line::from(vec![
-        Span::styled("j/k/↑↓/Tab:", Style::default().fg(Color::Yellow)),
-        Span::styled("nav ", Style::default().fg(Color::White)),
-        Span::styled("space:", Style::default().fg(Color::Green)),
-        Span::styled("toggle ", Style::default().fg(Color::White)),
+    let nav_label = if app.focus == crate::app::Focus::Services { "nav " } else { "scroll " };
+    let mut help_spans = vec![
+        Span::styled("j/k/↑↓:", Style::default().fg(Color::Yellow)),
+        Span::styled(nav_label, Style::default().fg(Color::White)),
+    ];
 
-        Span::styled("/:", Style::default().fg(Color::Blue)),
-        Span::styled("search ", Style::default().fg(Color::White)),
-            Span::styled("h/l:", Style::default().fg(Color::Magenta)),
-            Span::styled("switch focus ", Style::default().fg(Color::White)),
-            Span::styled("r:", Style::default().fg(Color::Red)),
-            Span::styled("refresh ", Style::default().fg(Color::White)),
-            Span::styled("s:", Style::default().fg(Color::Red)),
+    if app.focus == crate::app::Focus::Services {
+        help_spans.extend(vec![
+            Span::styled("Tab:", Style::default().fg(Color::Yellow)),
+            Span::styled("nav ", Style::default().fg(Color::White)),
+            Span::styled(if app.keybinds.services.toggle == " " { "space:".to_string() } else { format!("{}:", app.keybinds.services.toggle) }, Style::default().fg(Color::Green)),
+            Span::styled("toggle ", Style::default().fg(Color::White)),
+            Span::styled(format!("{}:", app.keybinds.services.start), Style::default().fg(Color::Green)),
+            Span::styled("start ", Style::default().fg(Color::White)),
+            Span::styled(format!("{}:", app.keybinds.services.stop), Style::default().fg(Color::Red)),
             Span::styled("stop ", Style::default().fg(Color::White)),
-            Span::styled("d:", Style::default().fg(Color::Yellow)),
-            Span::styled("daemon ", Style::default().fg(Color::White)),
-        Span::styled("q:", Style::default().fg(Color::Red)),
+            Span::styled(format!("{}:", app.keybinds.app.refresh), Style::default().fg(Color::Red)),
+            Span::styled("refresh ", Style::default().fg(Color::White)),
+            Span::styled(format!("{}:", app.keybinds.app.focus_logs), Style::default().fg(Color::Magenta)),
+            Span::styled("focus logs ", Style::default().fg(Color::White)),
+        ]);
+    } else {
+        // Focus on Logs
+        help_spans.extend(vec![
+            Span::styled(format!("{}:", app.keybinds.app.focus_services), Style::default().fg(Color::Magenta)),
+            Span::styled("focus services ", Style::default().fg(Color::White)),
+        ]);
+    }
+
+    help_spans.extend(vec![
+        Span::styled(format!("{}:", app.keybinds.app.search), Style::default().fg(Color::Blue)),
+        Span::styled("search ", Style::default().fg(Color::White)),
+        Span::styled(format!("{}:", app.keybinds.app.daemon_menu), Style::default().fg(Color::Yellow)),
+        Span::styled("daemon ", Style::default().fg(Color::White)),
+        Span::styled(format!("{}:", app.keybinds.app.quit), Style::default().fg(Color::Red)),
         Span::styled("quit", Style::default().fg(Color::White)),
     ]);
+
+    let help_text = Line::from(help_spans);
     let help = Paragraph::new(help_text)
         .block(
             Block::default()

@@ -13,21 +13,32 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
         let event = event::read()?;
         if let event::Event::Key(key) = event
             && key.kind == KeyEventKind::Press {
+                let quit_key = app.keybinds.app.quit.chars().next().unwrap_or('q');
+                let search_key = app.keybinds.app.search.chars().next().unwrap_or('/');
+                let stop_key = app.keybinds.services.stop.chars().next().unwrap_or('s');
+                let start_key = app.keybinds.services.start.chars().next().unwrap_or('S');
+                let daemon_key = app.keybinds.app.daemon_menu.chars().next().unwrap_or('d');
+
                 match key.code {
-                    KeyCode::Char('q') if !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
+                    KeyCode::Char(c) if c == quit_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
                         return Ok(false); // Exit the application
                     }
-                    KeyCode::Char('/') if !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
+                    KeyCode::Char(c) if c == search_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
                         app.search_mode = true;
                         app.search_query.clear();
                     }
 
-                    KeyCode::Char('s') if !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
+                    KeyCode::Char(c) if c == stop_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
                         if app.focus == crate::app::Focus::Services {
                             app.stop_service();
                         }
                     }
-                    KeyCode::Char('d') if !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
+                    KeyCode::Char(c) if c == start_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
+                        if app.focus == crate::app::Focus::Services {
+                            app.start_service();
+                        }
+                    }
+                    KeyCode::Char(c) if c == daemon_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
                         app.daemon_menu_mode = true;
                         app.daemon_action_selected = crate::app::DaemonAction::Start;
                     }
@@ -91,46 +102,54 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                          }
                          _ => {}
                      },
-                     _ => match key.code {
-                         // Focus switching with h/l keys
-                         KeyCode::Char('h') => {
-                             app.focus = crate::app::Focus::Services;
-                         }
-                         KeyCode::Char('l') => {
-                             app.focus = crate::app::Focus::Logs;
-                         }
+                      _ => match key.code {
+                          // Focus switching
+                          KeyCode::Char(c) if c == app.keybinds.app.focus_services.chars().next().unwrap_or('h') => {
+                              app.focus = crate::app::Focus::Services;
+                          }
+                          KeyCode::Char(c) if c == app.keybinds.app.focus_logs.chars().next().unwrap_or('l') => {
+                              app.focus = crate::app::Focus::Logs;
+                          }
 
-                         // Navigation
-                        KeyCode::Char('j') | KeyCode::Down => {
-                            app.next();
-                        }
-                        KeyCode::Char('k') | KeyCode::Up => {
-                            app.previous();
-                        }
-
-                        KeyCode::Tab => {
-                            if app.focus == crate::app::Focus::Services {
-                                app.next();
-                            }
-                        }
-                        KeyCode::BackTab => {
-                            if app.focus == crate::app::Focus::Services {
-                                app.previous();
-                            }
-                        }
-                         KeyCode::Char(' ') => {
+                          // Navigation
+                         KeyCode::Char('j') | KeyCode::Down => {
                              if app.focus == crate::app::Focus::Services {
-                                 app.toggle_service();
+                                 app.next();
+                             } else {
+                                 app.log_scroll += 1;
                              }
                          }
-                         KeyCode::Char('r') => {
-                            app.refresh_statuses();
-                            app.toast = Some(Toast {
-                                state: ToastState::Info,
-                                message: "Refreshed statuses".to_string(),
-                            });
-                            app.toast_timer = 3;
-                        }
+                         KeyCode::Char('k') | KeyCode::Up => {
+                             if app.focus == crate::app::Focus::Services {
+                                 app.previous();
+                             } else {
+                                 app.log_scroll = app.log_scroll.saturating_sub(1);
+                             }
+                         }
+
+                         KeyCode::Tab => {
+                             if app.focus == crate::app::Focus::Services {
+                                 app.next();
+                             }
+                         }
+                         KeyCode::BackTab => {
+                             if app.focus == crate::app::Focus::Services {
+                                 app.previous();
+                             }
+                         }
+                          KeyCode::Char(c) if c == app.keybinds.services.toggle.chars().next().unwrap_or(' ') => {
+                              if app.focus == crate::app::Focus::Services {
+                                  app.toggle_service();
+                              }
+                          }
+                          KeyCode::Char(c) if c == app.keybinds.app.refresh.chars().next().unwrap_or('r') => {
+                             app.refresh_statuses();
+                             app.toast = Some(Toast {
+                                 state: ToastState::Info,
+                                 message: "Refreshed statuses".to_string(),
+                             });
+                             app.toast_timer = 3;
+                         }
                     _ => {}
                 }
             }
