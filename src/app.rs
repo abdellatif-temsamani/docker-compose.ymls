@@ -1,73 +1,28 @@
 use std::process::Command;
-
-use ratatui::widgets::ScrollbarState;
+use std::sync::{Arc, Mutex};
 
 use crate::service::Service;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum Focus {
+    #[default]
     Services,
     Logs,
 }
 
-impl Default for Focus {
-    fn default() -> Self {
-        Focus::Services
-    }
+#[derive(Clone, Copy, PartialEq)]
+#[derive(Default)]
+pub enum DaemonAction {
+    #[default]
+    Start,
+    Stop,
+    Restart,
 }
 
-#[derive(Clone)]
-pub struct LogEntry {
-    pub service: String,
-    pub message: String,
-}
 
-#[derive(Clone)]
-pub struct LogBuffer {
-    entries: Vec<LogEntry>,
-    max_capacity: usize,
-}
 
-impl Default for LogBuffer {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            max_capacity: 500, // Reduced from 1000 to save memory
-        }
-    }
-}
-
-impl LogBuffer {
-    pub fn add_entry(&mut self, service: String, message: String) {
-        let entry = LogEntry { service, message };
-
-        self.entries.push(entry);
-
-        // Maintain capacity by removing oldest entries if we exceed max
-        if self.entries.len() > self.max_capacity {
-            let excess = self.entries.len() - self.max_capacity;
-            self.entries.drain(0..excess);
-        }
-    }
-
-    pub fn get_recent_logs(&mut self, limit: usize) -> Vec<String> {
-        // Trim buffer to maintain only the most recent logs we need
-        if self.entries.len() > limit * 2 {
-            // Keep more than requested for smooth scrolling, but not too many
-            let excess = self.entries.len() - (limit * 2);
-            self.entries.drain(0..excess);
-        }
-
-        let start = self.entries.len().saturating_sub(limit);
-
-        self.entries[start..]
-            .iter()
-            .map(|entry| format!("{}: {}", entry.service, entry.message))
-            .collect()
-    }
-}
 
 #[derive(Default)]
 pub struct App {
@@ -81,14 +36,10 @@ pub struct App {
     pub docker_daemon_running: bool,
     pub docker_command_available: bool,
     pub docker_compose_available: bool,
+    pub daemon_menu_mode: bool,
+    pub daemon_action_selected: DaemonAction,
     pub daemon_start_mode: bool,
     pub password_input: String,
-    pub logs: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, LogBuffer>>>,
-    pub log_scroll_position: u16,
-
-    pub log_viewport_height: u16, // Height of the logs viewport (for scroll calculations)
-    pub log_total_lines: u16,     // Total number of log lines (for scroll calculations)
-    pub log_scrollbar_state: ScrollbarState, // Scrollbar state for logs
     pub focus: Focus,             // Current focus area
     pub first_status_check: bool, // Track if this is the first status check
 }
@@ -191,6 +142,7 @@ impl App {
                 .map(|name| Service {
                     name,
                     status: Status::Stopped,
+                    logs: Arc::new(Mutex::new(String::new())),
                 })
                 .collect(),
             toast,
@@ -201,19 +153,77 @@ impl App {
             docker_daemon_running: docker_running,
             docker_command_available,
             docker_compose_available,
+            daemon_menu_mode: false,
+            daemon_action_selected: DaemonAction::Start,
             daemon_start_mode: false,
             password_input: String::new(),
-            logs: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            log_scroll_position: 0,
-            log_viewport_height: 10, // Default, will be updated in draw
-            log_total_lines: 0,      // Will be updated in draw
-            log_scrollbar_state: ScrollbarState::default(),
             focus: Focus::Services,  // Start focused on services
             first_status_check: true,
         };
         app.refresh_statuses(); // Check current statuses
-        app.refresh_logs(); // Load logs for selected
+        app.populate_initial_logs(); // Populate logs for running services
         app
+    }
+
+    pub fn populate_initial_logs(&mut self) {
+        if !self.docker_daemon_running {
+            return; // Can't get logs if docker isn't running
+        }
+
+        for service in &mut self.services {
+            if service.status == Status::Running {
+                // For running services, show a status summary that looks like startup logs
+                let service_name = service.name.clone();
+                let container_dir = format!("containers/{}", service_name);
+                let logs_clone = Arc::clone(&service.logs);
+
+                // Run this in a thread to not block app startup
+                std::thread::spawn(move || {
+                    let mut log_content = String::new();
+
+                    // Simulate pull status (check if images exist)
+                    log_content.push_str("Pull output:\n");
+                    if let Ok(out) = std::process::Command::new("docker-compose")
+                        .arg("images")
+                        .current_dir(&container_dir)
+                        .output()
+                    {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        for line in stdout.lines().skip(1) { // Skip header
+                            if !line.trim().is_empty() {
+                                let parts: Vec<&str> = line.split_whitespace().collect();
+                                if !parts.is_empty() {
+                                    log_content.push_str(&format!("{} Pulled\n", parts[0]));
+                                }
+                            }
+                        }
+                    }
+                    log_content.push('\n');
+
+                    // Show up status (services that are running)
+                    log_content.push_str("Up output:\n");
+                    if let Ok(out) = std::process::Command::new("docker-compose")
+                        .arg("ps")
+                        .current_dir(&container_dir)
+                        .output()
+                    {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        for line in stdout.lines().skip(1) { // Skip header
+                            if !line.trim().is_empty() {
+                                let parts: Vec<&str> = line.split_whitespace().collect();
+                                if !parts.is_empty() {
+                                    let service = parts[0];
+                                    log_content.push_str(&format!("Container {}  Running\n", service));
+                                }
+                            }
+                        }
+                    }
+
+                    let mut logs = logs_clone.lock().unwrap();
+                    *logs = log_content;
+                });
+            }
+        }
     }
 
     pub fn next(&mut self) {
@@ -228,9 +238,6 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
-        // Reset scroll position when switching services
-        self.log_scroll_position = 0;
-        self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
 
     pub fn previous(&mut self) {
@@ -245,67 +252,9 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
-        // Reset scroll position when switching services
-        self.log_scroll_position = 0;
-        self.log_scrollbar_state = self.log_scrollbar_state.position(0);
     }
 
-    pub fn focus_services(&mut self) {
-        self.focus = Focus::Services;
-    }
 
-    pub fn focus_logs(&mut self) {
-        self.focus = Focus::Logs;
-    }
 
-    pub fn scroll_logs_up(&mut self) {
-        if self.focus == Focus::Logs && self.log_scroll_position > 0 {
-            self.log_scroll_position = self.log_scroll_position.saturating_sub(1);
-            self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
-        }
-    }
 
-    pub fn scroll_logs_down(&mut self) {
-        if self.focus == Focus::Logs {
-            let max_scroll = self.log_total_lines.saturating_sub(self.log_viewport_height);
-            if self.log_scroll_position < max_scroll {
-                self.log_scroll_position += 1;
-                self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
-            }
-        }
-    }
-
-    pub fn scroll_logs_half_page_down(&mut self) {
-        if self.focus == Focus::Logs {
-            let half_page = self.log_viewport_height / 2;
-            let max_scroll = self.log_total_lines.saturating_sub(self.log_viewport_height);
-            let new_position = (self.log_scroll_position as u16 + half_page).min(max_scroll);
-            self.log_scroll_position = new_position;
-            self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
-        }
-    }
-
-    pub fn scroll_logs_half_page_up(&mut self) {
-        if self.focus == Focus::Logs {
-            let half_page = self.log_viewport_height / 2;
-            let new_position = self.log_scroll_position.saturating_sub(half_page);
-            self.log_scroll_position = new_position;
-            self.log_scrollbar_state = self.log_scrollbar_state.position(self.log_scroll_position as usize);
-        }
-    }
-
-    pub fn scroll_logs_to_top(&mut self) {
-        if self.focus == Focus::Logs {
-            self.log_scroll_position = 0;
-            self.log_scrollbar_state = self.log_scrollbar_state.position(0);
-        }
-    }
-
-    pub fn scroll_logs_to_bottom(&mut self) {
-        if self.focus == Focus::Logs {
-            let max_scroll = self.log_total_lines.saturating_sub(self.log_viewport_height);
-            self.log_scroll_position = max_scroll;
-            self.log_scrollbar_state = self.log_scrollbar_state.position(max_scroll as usize);
-        }
-    }
 }

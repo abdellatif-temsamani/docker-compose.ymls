@@ -4,14 +4,52 @@ use chrono::prelude::*;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
 use crate::app::App;
 use crate::service::Service;
 use crate::status::Status;
 use crate::toast::create_toast_widget;
+
+fn colorize_logs(logs: String) -> Text<'static> {
+    let mut lines = Vec::new();
+
+    for line in logs.lines() {
+        let line_str = line.to_string();
+        if line_str.starts_with("Pull output:") {
+            lines.push(Line::from(vec![
+                Span::styled("Pull output:", Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)),
+            ]));
+        } else if line_str.starts_with("Up output:") {
+            lines.push(Line::from(vec![
+                Span::styled("Up output:", Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD)),
+            ]));
+        } else if line_str.starts_with("Down output:") {
+            lines.push(Line::from(vec![
+                Span::styled("Down output:", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+            ]));
+        } else if line_str.contains("failed") || line_str.contains("Failed") || line_str.contains("error") || line_str.contains("Error") {
+            lines.push(Line::from(vec![
+                Span::styled(line_str, Style::default().fg(Color::Red)),
+            ]));
+        } else if line_str.contains("success") || line_str.contains("Success") || line_str.contains("done") || line_str.contains("Done") {
+            lines.push(Line::from(vec![
+                Span::styled(line_str, Style::default().fg(Color::Green)),
+            ]));
+        } else if line_str.trim().is_empty() {
+            lines.push(Line::from(""));
+        } else {
+            // Default color for other log lines
+            lines.push(Line::from(vec![
+                Span::styled(line_str, Style::default().fg(Color::White)),
+            ]));
+        }
+    }
+
+    Text::from(lines)
+}
 
 /// Render the UI to the terminal frame
 pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
@@ -107,9 +145,12 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         Style::default().fg(Color::Black).bg(Color::Blue)
     };
     let services_title = if app.focus == crate::app::Focus::Services {
-        "Docker Services [FOCUSED]"
+        Line::from(vec![
+            Span::styled("Docker Services ", Style::default().fg(Color::White)),
+            Span::styled("[FOCUSED]", Style::default().fg(Color::Blue).add_modifier(ratatui::style::Modifier::BOLD)),
+        ])
     } else {
-        "Docker Services"
+        Line::from("Docker Services")
     };
 
     let list = List::new(items)
@@ -207,65 +248,25 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             .areas(chunks[list_start]);
     frame.render_stateful_widget(list, list_rect, &mut app.state);
 
-    let (logs_text, log_line_count) = {
-        // Use safe locking for logs display
-        if let Some(mut logs_guard) = crate::actions::lock_logs(&app.logs) {
-            if let Some(i) = app.state.selected() {
-                let service_name = &app.services[i].name;
-                if let Some(buf) = logs_guard.get_mut(service_name) {
-                    if app.focus == crate::app::Focus::Logs {
-                        // In logs focus, get all logs and let paragraph handle scrolling
-                        let all_logs = buf.get_recent_logs(usize::MAX); // Get all available logs
-                        if all_logs.is_empty() {
-                            ("No logs yet - start the service to see activity".to_string(), 1)
-                        } else {
-                            let total_lines = all_logs.len() as u16;
-                            (all_logs.join("\n"), total_lines)
-                        }
-                    } else {
-                        // Services focus - show recent logs in viewport mode
-                        let viewport_log_count = app.log_viewport_height.saturating_sub(5) as usize;
-                        let logs = buf.get_recent_logs(viewport_log_count);
-                        if logs.is_empty() {
-                            ("No logs yet - start the service to see activity".to_string(), 1)
-                        } else {
-                            // Add 5 empty lines at the bottom
-                            let mut display_logs = logs;
-                            for _ in 0..5 {
-                                display_logs.push(String::new());
-                            }
-                            (display_logs.join("\n"), display_logs.len() as u16)
-                        }
-                    }
-                } else {
-                    ("No logs yet - start the service to see activity".to_string(), 1)
-                }
-            } else {
-                ("Select a service to view logs".to_string(), 1)
-            }
+    let logs_content = if let Some(i) = app.state.selected() {
+        let service = &app.services[i];
+        let logs_string = service.logs.lock().unwrap().clone();
+        if logs_string.is_empty() {
+            Text::from("No startup logs yet - start the service to see docker-compose output")
         } else {
-            ("Unable to access logs".to_string(), 1)
+            colorize_logs(logs_string)
         }
+    } else {
+        Text::from("Select a service to view logs")
     };
 
-    // Calculate dimensions for scrolling
-    let logs_height = logs_rect.height.saturating_sub(2); // Subtract borders
-    app.log_viewport_height = logs_height; // Store for key handling
-    app.log_total_lines = log_line_count; // Store for key handling
-
-    // Only reset scroll position when not focused on logs
-    if app.focus != crate::app::Focus::Logs {
-        app.log_scroll_position = 0;
-        app.log_scrollbar_state = app.log_scrollbar_state.position(0);
-    }
-
-    let title = if app.focus == crate::app::Focus::Logs {
-        let max_scroll = app.log_total_lines.saturating_sub(app.log_viewport_height);
-        let current_pos = app.log_scroll_position + 1;
-        let max_pos = max_scroll + 1;
-        format!("Container Logs [FOCUSED] (Scroll: {}/{})", current_pos, max_pos)
+    let logs_title = if app.focus == crate::app::Focus::Logs {
+        Line::from(vec![
+            Span::styled("Container Logs ", Style::default().fg(Color::White)),
+            Span::styled("[FOCUSED]", Style::default().fg(Color::Blue).add_modifier(ratatui::style::Modifier::BOLD)),
+        ])
     } else {
-        "Container Logs".to_string()
+        Line::from("Container Logs")
     };
 
     let logs_border_color = if app.focus == crate::app::Focus::Logs {
@@ -274,68 +275,38 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         Color::White
     };
 
-    let logs_widget = Paragraph::new(logs_text)
+    let logs_widget = Paragraph::new(logs_content)
         .block(
             Block::default()
-                .title(title)
+                .title(logs_title)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(logs_border_color)),
         )
         .style(Style::default().fg(Color::White))
-        .scroll((app.log_scroll_position, 0))
         .wrap(ratatui::widgets::Wrap { trim: true });
     frame.render_widget(logs_widget, logs_rect);
 
-    // Update scrollbar state with content length
-    app.log_scrollbar_state = app.log_scrollbar_state.content_length(log_line_count as usize);
 
-    // Render scrollbar if there are more lines than can be displayed
-    if log_line_count > app.log_viewport_height as u16 {
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(None)
-                .end_symbol(None),
-            logs_rect,
-            &mut app.log_scrollbar_state,
-        );
-    }
 
-    let help_text = match app.focus {
-        crate::app::Focus::Logs => Line::from(vec![
-            Span::styled("j/k:", Style::default().fg(Color::Cyan)),
-            Span::styled("scroll logs ", Style::default().fg(Color::White)),
-            Span::styled("gg/G:", Style::default().fg(Color::Magenta)),
-            Span::styled("top/bottom ", Style::default().fg(Color::White)),
-            Span::styled("Ctrl+d/u:", Style::default().fg(Color::Yellow)),
-            Span::styled("half page ", Style::default().fg(Color::White)),
-            Span::styled("h/l:", Style::default().fg(Color::Magenta)),
-            Span::styled("switch focus ", Style::default().fg(Color::White)),
+    let help_text = Line::from(vec![
+        Span::styled("j/k/↑↓/Tab:", Style::default().fg(Color::Yellow)),
+        Span::styled("nav ", Style::default().fg(Color::White)),
+        Span::styled("space:", Style::default().fg(Color::Green)),
+        Span::styled("toggle ", Style::default().fg(Color::White)),
 
-            Span::styled("r:", Style::default().fg(Color::Red)),
-            Span::styled("refresh ", Style::default().fg(Color::White)),
-            Span::styled("q:", Style::default().fg(Color::Red)),
-            Span::styled("quit", Style::default().fg(Color::White)),
-        ]),
-        crate::app::Focus::Services => Line::from(vec![
-            Span::styled("j/k/↑↓/Tab:", Style::default().fg(Color::Yellow)),
-            Span::styled("nav ", Style::default().fg(Color::White)),
-            Span::styled("space:", Style::default().fg(Color::Green)),
-            Span::styled("toggle ", Style::default().fg(Color::White)),
-
-            Span::styled("/:", Style::default().fg(Color::Blue)),
-            Span::styled("search ", Style::default().fg(Color::White)),
+        Span::styled("/:", Style::default().fg(Color::Blue)),
+        Span::styled("search ", Style::default().fg(Color::White)),
             Span::styled("h/l:", Style::default().fg(Color::Magenta)),
             Span::styled("switch focus ", Style::default().fg(Color::White)),
             Span::styled("r:", Style::default().fg(Color::Red)),
             Span::styled("refresh ", Style::default().fg(Color::White)),
-            Span::styled("d:", Style::default().fg(Color::Red)),
+            Span::styled("s:", Style::default().fg(Color::Red)),
             Span::styled("stop ", Style::default().fg(Color::White)),
-            Span::styled("D:", Style::default().fg(Color::Yellow)),
+            Span::styled("d:", Style::default().fg(Color::Yellow)),
             Span::styled("daemon ", Style::default().fg(Color::White)),
-            Span::styled("q:", Style::default().fg(Color::Red)),
-            Span::styled("quit", Style::default().fg(Color::White)),
-        ]),
-    };
+        Span::styled("q:", Style::default().fg(Color::Red)),
+        Span::styled("quit", Style::default().fg(Color::White)),
+    ]);
     let help = Paragraph::new(help_text)
         .block(
             Block::default()
@@ -347,14 +318,67 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
 
     frame.render_widget(help, chunks[help_start]);
 
-    if app.daemon_start_mode {
+    if app.daemon_menu_mode {
+        // Clear and overlay the entire screen
+        frame.render_widget(Clear, frame.area());
+        let bg_overlay = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg_overlay, frame.area());
+
+        let menu_items = ["Start Docker Daemon",
+            "Stop Docker Daemon",
+            "Restart Docker Daemon"];
+
+        let menu_height = menu_items.len() as u16 + 4; // +4 for borders and title
+        let menu_width = 30;
+
+        let mut list_items = Vec::new();
+        for (i, item) in menu_items.iter().enumerate() {
+            let style = if i == app.daemon_action_selected as usize {
+                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White).add_modifier(ratatui::style::Modifier::BOLD)
+            };
+            list_items.push(ratatui::widgets::ListItem::new(*item).style(style));
+        }
+
+        let daemon_menu = ratatui::widgets::List::new(list_items)
+            .block(
+                Block::default()
+                    .title("Docker Daemon Control")
+                    .title_style(Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD))
+                    .style(Style::default().bg(Color::Black)),
+            )
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+
+        let menu_area = Rect {
+            x: (frame.area().width.saturating_sub(menu_width)) / 2,
+            y: (frame.area().height.saturating_sub(menu_height)) / 2,
+            width: menu_width.min(frame.area().width),
+            height: menu_height.min(frame.area().height),
+        };
+        frame.render_widget(daemon_menu, menu_area);
+    } else if app.daemon_start_mode {
+        // Clear and overlay the entire screen
+        frame.render_widget(Clear, frame.area());
+        let bg_overlay = Block::default().style(Style::default().bg(Color::Black));
+        frame.render_widget(bg_overlay, frame.area());
+
+        let action_text = match app.daemon_action_selected {
+            crate::app::DaemonAction::Start => "Start Docker Daemon",
+            crate::app::DaemonAction::Stop => "Stop Docker Daemon",
+            crate::app::DaemonAction::Restart => "Restart Docker Daemon",
+        };
+
         let password_display = "*".repeat(app.password_input.len());
         let password_input = Paragraph::new(format!("Password: {}", password_display))
             .block(
                 Block::default()
-                    .title("Start Docker Daemon")
+                    .title(action_text)
+                    .title_style(Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD))
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Yellow))
+                    .border_style(Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD))
                     .style(Style::default().bg(Color::Black)),
             )
             .style(Style::default().fg(Color::White).bg(Color::Black));

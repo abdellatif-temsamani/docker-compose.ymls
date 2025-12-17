@@ -2,18 +2,7 @@ use std::process::Command;
 use std::thread;
 use std::sync::Arc;
 
-// Helper function for safe mutex locking
-pub fn lock_logs(logs: &std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, crate::app::LogBuffer>>>) -> Option<std::sync::MutexGuard<'_, std::collections::HashMap<String, crate::app::LogBuffer>>> {
-    match logs.lock() {
-        Ok(guard) => Some(guard),
-        Err(_) => {
-            eprintln!("Warning: Failed to lock logs mutex");
-            None
-        }
-    }
-}
-
-use crate::app::{App, LogBuffer};
+use crate::app::App;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
@@ -76,144 +65,61 @@ impl App {
             }
             service.status = Status::Pulling;
 
-            // Clone the service name and logs for the thread
+            // Clone the service name for the thread
             let service_name = service.name.clone();
             let service_name_for_toast = service_name.clone();
-            let logs = Arc::clone(&self.logs);
             let container_dir = format!("containers/{}", service_name);
+            let logs = Arc::clone(&service.logs);
 
             // Spawn a thread to handle the service startup
             thread::spawn(move || {
-                // First, pull images and capture logs
-                if let Some(mut logs_guard) = lock_logs(&logs) {
-                    logs_guard.entry(service_name.clone())
-                        .or_insert_with(|| LogBuffer::default())
-                        .add_entry(service_name.clone(), "Pulling images...".to_string());
+                // Clear previous logs
+                {
+                    let mut logs_lock = logs.lock().unwrap();
+                    logs_lock.clear();
                 }
+
+                // First, pull images
                 match Command::new("docker-compose")
                     .arg("pull")
                     .current_dir(&container_dir)
                     .output()
-                    .map_err(|e| format!("Failed to execute docker-compose pull: {}", e))
                 {
                     Ok(out) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            let service_buffer = logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default());
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            let stderr = String::from_utf8_lossy(&out.stderr);
-                            for line in stdout.lines().chain(stderr.lines()) {
-                                if !line.trim().is_empty() {
-                                    // Parse and enhance pull progress messages with more detail
-                                    let enhanced_line = if line.contains("Status: Downloaded") {
-                                        format!("✅ {}", line)
-                                    } else if line.contains("Status: Image is up to date") {
-                                        format!("📋 {}", line)
-                                    } else if line.contains("Pulling") && line.contains("fs layer") {
-                                        format!("📥 {}", line)
-                                    } else if line.contains("Extracting") {
-                                        format!("📦 {}", line)
-                                    } else if line.contains("Pull complete") {
-                                        format!("✅ {}", line)
-                                    } else if line.contains("Downloaded") {
-                                        format!("⬇️ {}", line)
-                                    } else if line.contains("Download") {
-                                        format!("⬇️ {}", line)
-                                    } else {
-                                        format!("pull: {}", line)
-                                    };
-                                    service_buffer.add_entry(service_name.clone(), enhanced_line);
-                                }
-                            }
-                            if out.status.success() {
-                                service_buffer.add_entry(service_name.clone(), "Pull completed successfully".to_string());
-                                // Note: Status transition from Pulling to Starting happens via refresh_statuses
-                            } else {
-                                service_buffer.add_entry(service_name.clone(), "Pull failed - aborting start".to_string());
-                                return; // Don't proceed with starting if pull failed
-                            }
-                        }
-                    }
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        let output = format!("Pull output:\n{}{}\n", stdout, stderr);
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str(&output);
+
+                        if !out.status.success() {
+                            return; // Don't proceed with starting if pull failed
+    }
+}
                     Err(e) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default())
-                                .add_entry(service_name.clone(), format!("Pull error: {}", e));
-                        }
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str(&format!("Pull failed: {}\n", e));
+                        return;
                     }
                 }
 
-                // Then start the service and capture initial logs
-                if let Some(mut logs_guard) = lock_logs(&logs) {
-                    logs_guard.entry(service_name.clone())
-                        .or_insert_with(|| LogBuffer::default())
-                        .add_entry(service_name.clone(), "Starting service...".to_string());
-                }
+                // Then start the service
                 match Command::new("docker-compose")
                     .arg("up")
                     .arg("-d")
                     .current_dir(&container_dir)
                     .output()
-                    .map_err(|e| format!("Failed to execute docker-compose up: {}", e))
                 {
                     Ok(out) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            let service_buffer = logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default());
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            let stderr = String::from_utf8_lossy(&out.stderr);
-                            for line in stdout.lines().chain(stderr.lines()) {
-                                if !line.trim().is_empty() {
-                                    service_buffer.add_entry(service_name.clone(), format!("up: {}", line));
-                                }
-                            }
-                            if out.status.success() {
-                                service_buffer.add_entry(service_name.clone(), "Service started successfully".to_string());
-                            } else {
-                                service_buffer.add_entry(service_name.clone(), "Service start failed".to_string());
-                            }
-                        }
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        let output = format!("Up output:\n{}{}\n", stdout, stderr);
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str(&output);
                     }
                     Err(e) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default())
-                                .add_entry(service_name.clone(), format!("Start error: {}", e));
-                        }
-                    }
-                }
-                // Note: Status transition from Pulling to Starting happens via refresh_statuses
-                match Command::new("docker-compose")
-                    .arg("up")
-                    .arg("-d")
-                    .current_dir(&container_dir)
-                    .output()
-                    .map_err(|e| format!("Failed to execute docker-compose up: {}", e))
-                {
-                    Ok(out) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            let service_buffer = logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default());
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            let stderr = String::from_utf8_lossy(&out.stderr);
-                            for line in stdout.lines().chain(stderr.lines()) {
-                                if !line.trim().is_empty() {
-                                    service_buffer.add_entry(service_name.clone(), format!("up: {}", line));
-                                }
-                            }
-                            if out.status.success() {
-                                service_buffer.add_entry(service_name.clone(), "Service started successfully".to_string());
-                            } else {
-                                service_buffer.add_entry(service_name.clone(), "Service start failed".to_string());
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default())
-                                .add_entry(service_name.clone(), format!("Start error: {}", e));
-                        }
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str(&format!("Up failed: {}\n", e));
                     }
                 }
             });
@@ -248,49 +154,29 @@ impl App {
             }
             service.status = Status::Stopping;
 
-            // Clone the service name and logs for the thread
+            // Clone the service name for the thread
             let service_name = service.name.clone();
             let service_name_for_toast = service_name.clone();
-            let logs = Arc::clone(&self.logs);
             let container_dir = format!("containers/{}", service_name);
+            let logs = Arc::clone(&service.logs);
 
             // Spawn a thread to handle the service shutdown
             thread::spawn(move || {
-                if let Some(mut logs_guard) = lock_logs(&logs) {
-                    logs_guard.entry(service_name.clone())
-                        .or_insert_with(|| LogBuffer::default())
-                        .add_entry(service_name.clone(), "Stopping service...".to_string());
-                }
                 match Command::new("docker-compose")
                     .arg("down")
                     .current_dir(&container_dir)
                     .output()
-                    .map_err(|e| format!("Failed to execute docker-compose down: {}", e))
                 {
                     Ok(out) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            let service_buffer = logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default());
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            let stderr = String::from_utf8_lossy(&out.stderr);
-                            for line in stdout.lines().chain(stderr.lines()) {
-                                if !line.trim().is_empty() {
-                                    service_buffer.add_entry(service_name.clone(), format!("down: {}", line));
-                                }
-                            }
-                            if out.status.success() {
-                                service_buffer.add_entry(service_name.clone(), "Service stopped successfully".to_string());
-                            } else {
-                                service_buffer.add_entry(service_name.clone(), "Service stop failed".to_string());
-                            }
-                        }
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        let output = format!("Down output:\n{}{}\n", stdout, stderr);
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str(&output);
                     }
                     Err(e) => {
-                        if let Some(mut logs_guard) = lock_logs(&logs) {
-                            logs_guard.entry(service_name.clone())
-                                .or_insert_with(|| LogBuffer::default())
-                                .add_entry(service_name.clone(), format!("Stop error: {}", e));
-                        }
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str(&format!("Down failed: {}\n", e));
                     }
                 }
             });
@@ -314,50 +200,7 @@ impl App {
         }
     }
 
-    pub fn refresh_logs(&mut self) {
-        if !self.docker_daemon_running {
-            // Add system message to all existing service buffers
-            if let Some(mut logs_guard) = lock_logs(&self.logs) {
-                for (_service_name, buffer) in logs_guard.iter_mut() {
-                    buffer.add_entry("system".to_string(), "Docker daemon not running".to_string());
-                }
-            }
-            return;
-        }
-        if let Some(i) = self.state.selected() {
-            let service = &self.services[i];
-            match Command::new("docker-compose")
-                .arg("logs")
-                .arg("--tail")
-                .arg("20")
-                .current_dir(format!("containers/{}", service.name))
-                .output()
-            {
-                Ok(out) => {
-                    if let Some(mut logs_guard) = lock_logs(&self.logs) {
-                        let service_buffer = logs_guard.entry(service.name.clone())
-                            .or_insert_with(|| LogBuffer::default());
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        let stderr = String::from_utf8_lossy(&out.stderr);
 
-                        // Add runtime logs if available
-                        for line in stdout.lines().chain(stderr.lines()) {
-                            if !line.trim().is_empty() {
-                                service_buffer.add_entry(service.name.clone(), format!("runtime: {}", line));
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    if let Some(mut logs_guard) = lock_logs(&self.logs) {
-                        let service_buffer = logs_guard.entry(service.name.clone())
-                            .or_insert_with(|| LogBuffer::default());
-                        service_buffer.add_entry(service.name.clone(), format!("Failed to get logs: {}", e));
-                    }
-                }
-            }
-        }
-    }
 
     pub fn start_daemon(&mut self) {
         if self.password_input.is_empty() {
@@ -385,7 +228,8 @@ impl App {
                             message: "Docker daemon started".to_string(),
                         });
                         self.toast_timer = 3;
-                        self.docker_daemon_running = true;
+                        // Refresh daemon status after operation
+                        std::thread::sleep(std::time::Duration::from_millis(500));
                         self.refresh_statuses();
                     }
                     _ => {
@@ -420,8 +264,228 @@ impl App {
         self.password_input.clear();
         self.daemon_start_mode = false;
     }
-}
 
+    pub fn stop_all_services(&mut self) -> Result<(), String> {
+        // Stop all running services before stopping daemon
+        let running_services: Vec<String> = self.services.iter()
+            .filter(|s| s.status == Status::Running)
+            .map(|s| s.name.clone())
+            .collect();
+
+        if running_services.is_empty() {
+            return Ok(());
+        }
+
+        for service_name in running_services {
+            let container_dir = format!("containers/{}", service_name);
+            match Command::new("docker-compose")
+                .arg("down")
+                .current_dir(&container_dir)
+                .output()
+            {
+                Ok(out) => {
+                    if !out.status.success() {
+                        return Err(format!("Failed to stop service {}", service_name));
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("Error stopping service {}: {}", service_name, e));
+                }
+            }
+        }
+
+        // Refresh statuses after stopping services
+        self.refresh_statuses();
+        Ok(())
+    }
+
+    pub fn restart_daemon(&mut self) {
+        if self.password_input.is_empty() {
+            return;
+        }
+
+        // First stop all running services
+        match self.stop_all_services() {
+            Ok(_) => {
+                // Show progress message
+                self.toast = Some(Toast {
+                    state: ToastState::Info,
+                    message: "Stopping services before restart...".to_string(),
+                });
+                self.toast_timer = 2;
+            }
+            Err(e) => {
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: format!("Failed to stop services: {}", e),
+                });
+                self.toast_timer = 5;
+                self.password_input.clear();
+                self.daemon_start_mode = false;
+                return;
+            }
+        }
+
+        // Restart both docker.service and docker.socket
+        let result = Command::new("sudo")
+            .arg("-S")
+            .arg("systemctl")
+            .arg("restart")
+            .arg("docker.service")
+            .arg("docker.socket")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        match result {
+            Ok(mut child) => {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    use std::io::Write;
+                    writeln!(stdin, "{}", self.password_input).ok();
+                }
+                match child.wait() {
+                    Ok(status) if status.success() => {
+                        self.toast = Some(Toast {
+                            state: ToastState::Success,
+                            message: "Docker daemon restarted (services stopped first)".to_string(),
+                        });
+                        self.toast_timer = 4;
+                        // Refresh daemon status after operation
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        self.refresh_statuses();
+                    }
+                    _ => {
+                        let error_msg = if let Some(stderr) = child.stderr.as_mut() {
+                            use std::io::Read;
+                            let mut buf = String::new();
+                            stderr.read_to_string(&mut buf).ok();
+                            if buf.trim().is_empty() {
+                                "Failed to restart Docker daemon".to_string()
+                            } else {
+                                format!("Failed to restart Docker daemon: {}", buf.trim())
+                            }
+                        } else {
+                            "Failed to restart Docker daemon".to_string()
+                        };
+                        self.toast = Some(Toast {
+                            state: ToastState::Error,
+                            message: error_msg,
+                        });
+                        self.toast_timer = 5;
+                    }
+                }
+            }
+            Err(e) => {
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: format!("Failed to restart Docker daemon: {}", e),
+                });
+                self.toast_timer = 5;
+            }
+        }
+        self.password_input.clear();
+        self.daemon_start_mode = false;
+    }
+
+    pub fn stop_daemon(&mut self) {
+        if self.password_input.is_empty() {
+            return;
+        }
+
+        // First stop all running services
+        match self.stop_all_services() {
+            Ok(_) => {
+                // Show progress message
+                self.toast = Some(Toast {
+                    state: ToastState::Info,
+                    message: "Stopping services...".to_string(),
+                });
+                self.toast_timer = 2;
+            }
+            Err(e) => {
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: format!("Failed to stop services: {}", e),
+                });
+                self.toast_timer = 5;
+                self.password_input.clear();
+                self.daemon_start_mode = false;
+                return;
+            }
+        }
+
+        // Stop both docker.service and docker.socket
+        let result = Command::new("sudo")
+            .arg("-S")
+            .arg("systemctl")
+            .arg("stop")
+            .arg("docker.service")
+            .arg("docker.socket")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        match result {
+            Ok(mut child) => {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    use std::io::Write;
+                    writeln!(stdin, "{}", self.password_input).ok();
+                }
+                match child.wait() {
+                    Ok(status) if status.success() => {
+                        self.toast = Some(Toast {
+                            state: ToastState::Success,
+                            message: "Docker daemon stopped (services stopped first)".to_string(),
+                        });
+                        self.toast_timer = 4;
+                        // Refresh daemon status after operation
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        self.refresh_statuses();
+                    }
+                    _ => {
+                        let error_msg = if let Some(stderr) = child.stderr.as_mut() {
+                            use std::io::Read;
+                            let mut buf = String::new();
+                            stderr.read_to_string(&mut buf).ok();
+                            if buf.trim().is_empty() {
+                                "Failed to stop Docker daemon".to_string()
+                            } else {
+                                format!("Failed to stop Docker daemon: {}", buf.trim())
+                            }
+                        } else {
+                            "Failed to stop Docker daemon".to_string()
+                        };
+                        self.toast = Some(Toast {
+                            state: ToastState::Error,
+                            message: error_msg,
+                        });
+                        self.toast_timer = 5;
+                    }
+                }
+            }
+            Err(e) => {
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: format!("Failed to stop Docker daemon: {}", e),
+                });
+                self.toast_timer = 5;
+            }
+        }
+        self.password_input.clear();
+        self.daemon_start_mode = false;
+    }
+
+    pub fn execute_daemon_action(&mut self) {
+        use crate::app::DaemonAction;
+        match self.daemon_action_selected {
+            DaemonAction::Start => self.start_daemon(),
+            DaemonAction::Stop => self.stop_daemon(),
+            DaemonAction::Restart => self.restart_daemon(),
+        }
+    }
+}
 fn check_docker_daemon() -> bool {
     Command::new("docker")
         .arg("info")
