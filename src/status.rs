@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
 pub enum Status {
     Running,
     Stopped,

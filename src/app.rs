@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::fs;
 use std::process::Command;
 
 use crate::service::Service;
@@ -109,7 +108,6 @@ impl App {
             password_input: String::new(),
             logs: vec![],
         };
-        app.load_states(); // Load saved states
         app.refresh_statuses(); // Check current statuses
         app.refresh_logs(); // Load logs for selected
         // Add initial status to output
@@ -141,19 +139,6 @@ impl App {
                 }
             }
         }
-    }
-
-    pub fn load_states(&mut self) {
-        if let Ok(content) = fs::read_to_string("states.json")
-            && let Ok(saved_services) =
-                serde_json::from_str::<Vec<crate::service::Service>>(&content)
-            {
-                for saved in saved_services {
-                    if let Some(service) = self.services.iter_mut().find(|s| s.name == saved.name) {
-                        service.status = saved.status;
-                    }
-                }
-            }
     }
 
     pub fn start_service(&mut self) {
@@ -374,10 +359,11 @@ fn get_status(name: String) -> Status {
                 let mut has_running = false;
                 for line in lines {
                     if let Some(status_part) = line.split('\t').nth(1)
-                        && status_part.starts_with("Up") {
-                            has_running = true;
-                            break;
-                        }
+                        && status_part.starts_with("Up")
+                    {
+                        has_running = true;
+                        break;
+                    }
                 }
                 if has_running {
                     Status::Running
