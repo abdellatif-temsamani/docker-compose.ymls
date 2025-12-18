@@ -5,6 +5,8 @@ daemon_menu = "d"
 refresh = "r"
 focus_services = "h"
 focus_logs = "l"
+scroll_down = "j"
+scroll_up = "k"
 
 [services]
 stop = "s"
@@ -12,4 +14,4 @@ start = "S"
 toggle = " "
 
 [logs]
-# Currently no specific keys for logs, but placeholder for future
+toggle_auto_scroll = " "

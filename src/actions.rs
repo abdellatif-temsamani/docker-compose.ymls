@@ -1,6 +1,7 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::sync::Arc;
+use std::io::{BufRead, BufReader};
 
 use crate::app::App;
 use crate::status::{Status, ToastState};
@@ -117,15 +118,42 @@ impl App {
                 let pull_success = match Command::new("docker-compose")
                     .arg("pull")
                     .current_dir(&container_dir)
-                    .output()
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
                 {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        let stderr = String::from_utf8_lossy(&out.stderr);
-                        let output = format!("Pull output:\n{}{}\n", stdout, stderr);
-                        let mut logs_lock = logs.lock().unwrap();
-                        logs_lock.push_str(&output);
-                        out.status.success()
+                    Ok(mut child) => {
+                        {
+                            let mut logs_lock = logs.lock().unwrap();
+                            logs_lock.push_str("Pull output:\n");
+                        }
+
+                        let logs_stdout = Arc::clone(&logs);
+                        if let Some(stdout) = child.stdout.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stdout);
+                                for line in reader.lines().filter_map(Result::ok) {
+                                    let mut logs_lock = logs_stdout.lock().unwrap();
+                                    logs_lock.push_str(&format!("{}\n", line));
+                                }
+                            });
+                        }
+
+                        let logs_stderr = Arc::clone(&logs);
+                        if let Some(stderr) = child.stderr.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stderr);
+                                for line in reader.lines().filter_map(Result::ok) {
+                                    let mut logs_lock = logs_stderr.lock().unwrap();
+                                    logs_lock.push_str(&format!("{}\n", line));
+                                }
+                            });
+                        }
+
+                        match child.wait() {
+                            Ok(status) => status.success(),
+                            Err(_) => false,
+                        }
                     }
                     Err(e) => {
                         let mut logs_lock = logs.lock().unwrap();
@@ -148,14 +176,39 @@ impl App {
                     .arg("up")
                     .arg("-d")
                     .current_dir(&container_dir)
-                    .output()
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
                 {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        let stderr = String::from_utf8_lossy(&out.stderr);
-                        let output = format!("Up output:\n{}{}\n", stdout, stderr);
-                        let mut logs_lock = logs.lock().unwrap();
-                        logs_lock.push_str(&output);
+                    Ok(mut child) => {
+                        {
+                            let mut logs_lock = logs.lock().unwrap();
+                            logs_lock.push_str("Up output:\n");
+                        }
+
+                        let logs_stdout = Arc::clone(&logs);
+                        if let Some(stdout) = child.stdout.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stdout);
+                                for line in reader.lines().filter_map(Result::ok) {
+                                    let mut logs_lock = logs_stdout.lock().unwrap();
+                                    logs_lock.push_str(&format!("{}\n", line));
+                                }
+                            });
+                        }
+
+                        let logs_stderr = Arc::clone(&logs);
+                        if let Some(stderr) = child.stderr.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stderr);
+                                for line in reader.lines().filter_map(Result::ok) {
+                                    let mut logs_lock = logs_stderr.lock().unwrap();
+                                    logs_lock.push_str(&format!("{}\n", line));
+                                }
+                            });
+                        }
+
+                        let _ = child.wait(); // We don't care about success here, as status is checked elsewhere
                     }
                     Err(e) => {
                         let mut logs_lock = logs.lock().unwrap();
@@ -205,14 +258,39 @@ impl App {
                 match Command::new("docker-compose")
                     .arg("down")
                     .current_dir(&container_dir)
-                    .output()
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
                 {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        let stderr = String::from_utf8_lossy(&out.stderr);
-                        let output = format!("Down output:\n{}{}\n", stdout, stderr);
-                        let mut logs_lock = logs.lock().unwrap();
-                        logs_lock.push_str(&output);
+                    Ok(mut child) => {
+                        {
+                            let mut logs_lock = logs.lock().unwrap();
+                            logs_lock.push_str("Down output:\n");
+                        }
+
+                        let logs_stdout = Arc::clone(&logs);
+                        if let Some(stdout) = child.stdout.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stdout);
+                                for line in reader.lines().filter_map(Result::ok) {
+                                    let mut logs_lock = logs_stdout.lock().unwrap();
+                                    logs_lock.push_str(&format!("{}\n", line));
+                                }
+                            });
+                        }
+
+                        let logs_stderr = Arc::clone(&logs);
+                        if let Some(stderr) = child.stderr.take() {
+                            thread::spawn(move || {
+                                let reader = BufReader::new(stderr);
+                                for line in reader.lines().filter_map(Result::ok) {
+                                    let mut logs_lock = logs_stderr.lock().unwrap();
+                                    logs_lock.push_str(&format!("{}\n", line));
+                                }
+                            });
+                        }
+
+                        let _ = child.wait();
                     }
                     Err(e) => {
                         let mut logs_lock = logs.lock().unwrap();

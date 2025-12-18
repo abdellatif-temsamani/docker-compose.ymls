@@ -262,10 +262,14 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     };
 
     let logs_title = if app.focus == crate::app::Focus::Logs {
-        Line::from(vec![
+        let mut spans = vec![
             Span::styled("Container Logs ", Style::default().fg(Color::White)),
             Span::styled("[FOCUSED]", Style::default().fg(Color::Blue).add_modifier(ratatui::style::Modifier::BOLD)),
-        ])
+        ];
+        if app.log_auto_scroll {
+            spans.push(Span::styled(" [AUTO]", Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD)));
+        }
+        Line::from(spans)
     } else {
         Line::from("Container Logs")
     };
@@ -275,6 +279,14 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     } else {
         Color::White
     };
+
+    if app.log_auto_scroll {
+        // Auto-scroll logs fully to bottom
+        let total_lines = logs_content.lines.len() as u16;
+        // Subtract 3 for title (1) + top border (1) + bottom border (1)
+        let visible_lines = logs_rect.height.saturating_sub(3);
+        app.log_scroll = total_lines.saturating_sub(visible_lines);
+    }
 
     let logs_widget = Paragraph::new(logs_content)
         .block(
@@ -292,7 +304,7 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
 
     let nav_label = if app.focus == crate::app::Focus::Services { "nav " } else { "scroll " };
     let mut help_spans = vec![
-        Span::styled("j/k/↑↓:", Style::default().fg(Color::Yellow)),
+        Span::styled(format!("{}/{}/↑↓:", app.keybinds.app.scroll_down, app.keybinds.app.scroll_up), Style::default().fg(Color::Yellow)),
         Span::styled(nav_label, Style::default().fg(Color::White)),
     ];
 
@@ -316,6 +328,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         help_spans.extend(vec![
             Span::styled(format!("{}:", app.keybinds.app.focus_services), Style::default().fg(Color::Magenta)),
             Span::styled("focus services ", Style::default().fg(Color::White)),
+            Span::styled(if app.keybinds.logs.toggle_auto_scroll == " " { "space:".to_string() } else { format!("{}:", app.keybinds.logs.toggle_auto_scroll) }, Style::default().fg(Color::Green)),
+            Span::styled("toggle auto-scroll ", Style::default().fg(Color::White)),
         ]);
     }
 

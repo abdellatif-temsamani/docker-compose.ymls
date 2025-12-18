@@ -16,6 +16,8 @@ pub struct AppKeys {
     pub refresh: String,
     pub focus_services: String,
     pub focus_logs: String,
+    pub scroll_down: String,
+    pub scroll_up: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -27,7 +29,7 @@ pub struct ServicesKeys {
 
 #[derive(Deserialize, Debug)]
 pub struct LogsKeys {
-    // Placeholder for future keys
+    pub toggle_auto_scroll: String,
 }
 
 impl Keybinds {

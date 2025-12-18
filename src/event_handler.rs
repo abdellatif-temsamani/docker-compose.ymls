@@ -18,6 +18,8 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                 let stop_key = app.keybinds.services.stop.chars().next().unwrap_or('s');
                 let start_key = app.keybinds.services.start.chars().next().unwrap_or('S');
                 let daemon_key = app.keybinds.app.daemon_menu.chars().next().unwrap_or('d');
+                let scroll_down_key = app.keybinds.app.scroll_down.chars().next().unwrap_or('j');
+                let scroll_up_key = app.keybinds.app.scroll_up.chars().next().unwrap_or('k');
 
                 match key.code {
                     KeyCode::Char(c) if c == quit_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
@@ -78,23 +80,37 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                         }
                         _ => {}
                     },
-                     _ if app.daemon_menu_mode => match key.code {
-                         KeyCode::Char('j') | KeyCode::Down => {
-                             app.daemon_action_selected = match app.daemon_action_selected {
-                                 crate::app::DaemonAction::Start => crate::app::DaemonAction::Stop,
-                                 crate::app::DaemonAction::Stop => crate::app::DaemonAction::Restart,
-                                 crate::app::DaemonAction::Restart => crate::app::DaemonAction::Start,
-                             };
-                         }
-                         KeyCode::Char('k') | KeyCode::Up => {
-                             app.daemon_action_selected = match app.daemon_action_selected {
-                                 crate::app::DaemonAction::Start => crate::app::DaemonAction::Restart,
-                                 crate::app::DaemonAction::Stop => crate::app::DaemonAction::Start,
-                                 crate::app::DaemonAction::Restart => crate::app::DaemonAction::Stop,
-                             };
-                         }
-                         _ => {}
-                     },
+                      _ if app.daemon_menu_mode => match key.code {
+                          KeyCode::Char(c) if c == scroll_down_key => {
+                              app.daemon_action_selected = match app.daemon_action_selected {
+                                  crate::app::DaemonAction::Start => crate::app::DaemonAction::Stop,
+                                  crate::app::DaemonAction::Stop => crate::app::DaemonAction::Restart,
+                                  crate::app::DaemonAction::Restart => crate::app::DaemonAction::Start,
+                              };
+                          }
+                          KeyCode::Down => {
+                              app.daemon_action_selected = match app.daemon_action_selected {
+                                  crate::app::DaemonAction::Start => crate::app::DaemonAction::Stop,
+                                  crate::app::DaemonAction::Stop => crate::app::DaemonAction::Restart,
+                                  crate::app::DaemonAction::Restart => crate::app::DaemonAction::Start,
+                              };
+                          }
+                          KeyCode::Char(c) if c == scroll_up_key => {
+                              app.daemon_action_selected = match app.daemon_action_selected {
+                                  crate::app::DaemonAction::Start => crate::app::DaemonAction::Restart,
+                                  crate::app::DaemonAction::Stop => crate::app::DaemonAction::Start,
+                                  crate::app::DaemonAction::Restart => crate::app::DaemonAction::Stop,
+                              };
+                          }
+                          KeyCode::Up => {
+                              app.daemon_action_selected = match app.daemon_action_selected {
+                                  crate::app::DaemonAction::Start => crate::app::DaemonAction::Restart,
+                                  crate::app::DaemonAction::Stop => crate::app::DaemonAction::Start,
+                                  crate::app::DaemonAction::Restart => crate::app::DaemonAction::Stop,
+                              };
+                          }
+                          _ => {}
+                      },
                      _ if app.daemon_start_mode => match key.code {
                          KeyCode::Char(c) => app.password_input.push(c),
                          KeyCode::Backspace => {
@@ -112,20 +128,38 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                           }
 
                           // Navigation
-                         KeyCode::Char('j') | KeyCode::Down => {
-                             if app.focus == crate::app::Focus::Services {
-                                 app.next();
-                             } else {
-                                 app.log_scroll += 1;
-                             }
-                         }
-                         KeyCode::Char('k') | KeyCode::Up => {
-                             if app.focus == crate::app::Focus::Services {
-                                 app.previous();
-                             } else {
-                                 app.log_scroll = app.log_scroll.saturating_sub(1);
-                             }
-                         }
+                          KeyCode::Char(c) if c == scroll_down_key => {
+                              if app.focus == crate::app::Focus::Services {
+                                  app.next();
+                              } else {
+                                  app.log_scroll += 1;
+                                  app.log_auto_scroll = false;
+                              }
+                          }
+                          KeyCode::Down => {
+                              if app.focus == crate::app::Focus::Services {
+                                  app.next();
+                              } else {
+                                  app.log_scroll += 1;
+                                  app.log_auto_scroll = false;
+                              }
+                          }
+                          KeyCode::Char(c) if c == scroll_up_key => {
+                              if app.focus == crate::app::Focus::Services {
+                                  app.previous();
+                              } else {
+                                  app.log_scroll = app.log_scroll.saturating_sub(1);
+                                  app.log_auto_scroll = false;
+                              }
+                          }
+                          KeyCode::Up => {
+                              if app.focus == crate::app::Focus::Services {
+                                  app.previous();
+                              } else {
+                                  app.log_scroll = app.log_scroll.saturating_sub(1);
+                                  app.log_auto_scroll = false;
+                              }
+                          }
 
                          KeyCode::Tab => {
                              if app.focus == crate::app::Focus::Services {
@@ -137,11 +171,13 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                                  app.previous();
                              }
                          }
-                          KeyCode::Char(c) if c == app.keybinds.services.toggle.chars().next().unwrap_or(' ') => {
-                              if app.focus == crate::app::Focus::Services {
-                                  app.toggle_service();
-                              }
-                          }
+                           KeyCode::Char(c) if c == app.keybinds.services.toggle.chars().next().unwrap_or(' ') => {
+                               if app.focus == crate::app::Focus::Services {
+                                   app.toggle_service();
+                               } else if app.focus == crate::app::Focus::Logs {
+                                   app.log_auto_scroll = !app.log_auto_scroll;
+                               }
+                           }
                           KeyCode::Char(c) if c == app.keybinds.app.refresh.chars().next().unwrap_or('r') => {
                              app.refresh_statuses();
                              app.toast = Some(Toast {

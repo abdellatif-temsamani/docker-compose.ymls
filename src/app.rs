@@ -43,6 +43,7 @@ pub struct App {
     pub focus: Focus,             // Current focus area
     pub first_status_check: bool, // Track if this is the first status check
     pub log_scroll: u16,          // Scroll position for logs
+    pub log_auto_scroll: bool,   // Whether to auto-scroll logs to bottom
     pub keybinds: Keybinds,
 }
 
@@ -162,6 +163,7 @@ impl App {
             focus: Focus::Services,  // Start focused on services
             first_status_check: true,
             log_scroll: 0,
+            log_auto_scroll: true,
             keybinds,
         };
         app.refresh_statuses(); // Check current statuses
@@ -170,64 +172,27 @@ impl App {
         app
     }
 
-    pub fn populate_initial_logs(&mut self) {
-        if !self.docker_daemon_running {
-            return; // Can't get logs if docker isn't running
-        }
-
-        for service in &mut self.services {
-            if *service.status.lock().unwrap() == Status::Running {
-                // For running services, show a status summary that looks like startup logs
-                let service_name = service.name.clone();
+    pub fn populate_initial_logs(&self) {
+        for service in &self.services {
+            let service_name = service.name.clone();
+            let logs = Arc::clone(&service.logs);
+            std::thread::spawn(move || {
                 let container_dir = format!("containers/{}", service_name);
-                let logs_clone = Arc::clone(&service.logs);
-
-                // Run this in a thread to not block app startup
-                std::thread::spawn(move || {
-                    let mut log_content = String::new();
-
-                    // Simulate pull status (check if images exist)
-                    log_content.push_str("Pull output:\n");
-                    if let Ok(out) = std::process::Command::new("docker-compose")
-                        .arg("images")
-                        .current_dir(&container_dir)
-                        .output()
-                    {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        for line in stdout.lines().skip(1) { // Skip header
-                            if !line.trim().is_empty() {
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-                                if !parts.is_empty() {
-                                    log_content.push_str(&format!("{} Pulled\n", parts[0]));
-                                }
-                            }
-                        }
+                if let Ok(output) = std::process::Command::new("docker-compose")
+                    .arg("logs")
+                    .arg("--tail")
+                    .arg("50")
+                    .current_dir(&container_dir)
+                    .output()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let mut logs_lock = logs.lock().unwrap();
+                    if logs_lock.is_empty() {
+                        logs_lock.push_str(&format!("Recent logs:\n{}{}\n", stdout, stderr));
                     }
-                    log_content.push('\n');
-
-                    // Show up status (services that are running)
-                    log_content.push_str("Up output:\n");
-                    if let Ok(out) = std::process::Command::new("docker-compose")
-                        .arg("ps")
-                        .current_dir(&container_dir)
-                        .output()
-                    {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        for line in stdout.lines().skip(1) { // Skip header
-                            if !line.trim().is_empty() {
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-                                if !parts.is_empty() {
-                                    let service = parts[0];
-                                    log_content.push_str(&format!("Container {}  Running\n", service));
-                                }
-                            }
-                        }
-                    }
-
-                    let mut logs = logs_clone.lock().unwrap();
-                    *logs = log_content;
-                });
-            }
+                }
+            });
         }
     }
 
@@ -243,6 +208,7 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        self.log_auto_scroll = true;
     }
 
     pub fn previous(&mut self) {
@@ -257,6 +223,7 @@ impl App {
             None => 0,
         };
         self.state.select(Some(i));
+        self.log_auto_scroll = true;
     }
 
     pub fn start_event_listeners(&self) {
