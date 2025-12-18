@@ -78,10 +78,18 @@ impl App {
 
     pub fn start_service(&mut self) {
         if let Some(i) = self.state.selected() {
+            if !check_docker_service() {
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: "Cannot start service: Docker service not running".to_string(),
+                });
+                self.toast_timer = 5;
+                return;
+            }
             if !self.docker_daemon_running {
                 self.toast = Some(Toast {
                     state: ToastState::Error,
-                    message: "Cannot start service: Docker daemon not running".to_string(),
+                    message: "Cannot start service: Docker daemon not responding".to_string(),
                 });
                 self.toast_timer = 5;
                 return;
@@ -227,10 +235,18 @@ impl App {
 
     pub fn stop_service(&mut self) {
         if let Some(i) = self.state.selected() {
+            if !check_docker_service() {
+                self.toast = Some(Toast {
+                    state: ToastState::Error,
+                    message: "Cannot stop service: Docker service not running".to_string(),
+                });
+                self.toast_timer = 5;
+                return;
+            }
             if !self.docker_daemon_running {
                 self.toast = Some(Toast {
                     state: ToastState::Error,
-                    message: "Cannot stop service: Docker daemon not running".to_string(),
+                    message: "Cannot stop service: Docker daemon not responding".to_string(),
                 });
                 self.toast_timer = 5;
                 return;
@@ -604,8 +620,18 @@ impl App {
         }
     }
 }
+fn check_docker_service() -> bool {
+    Command::new("systemctl")
+        .arg("is-active")
+        .arg("docker.service")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 fn check_docker_daemon() -> bool {
-    Command::new("docker")
+    // Check both that docker daemon is responding and service is active
+    check_docker_service() && Command::new("docker")
         .arg("info")
         .output()
         .map(|out| out.status.success())

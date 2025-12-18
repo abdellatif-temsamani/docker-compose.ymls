@@ -182,6 +182,9 @@ impl App {
     }
 
     pub fn populate_initial_logs(&self) {
+        if !self.docker_daemon_running {
+            return;
+        }
         for service in &self.services {
             let service_name = service.name.clone();
             let logs = Arc::clone(&service.logs);
@@ -247,6 +250,9 @@ impl App {
     }
 
     pub fn start_event_listeners(&self) {
+        if !self.docker_daemon_running {
+            return;
+        }
         for service in &self.services {
             let service_name = service.name.clone();
             let status_clone = Arc::clone(&service.status);
