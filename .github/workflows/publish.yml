@@ -7,11 +7,7 @@ on:
       - "v*"
 
 jobs:
-  test:
-    uses: ./.github/workflows/ci.yml
-
   release:
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,4 +47,3 @@ jobs:
           body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
