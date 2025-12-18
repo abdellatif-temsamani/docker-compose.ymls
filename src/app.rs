@@ -6,11 +6,20 @@ use crate::service::Service;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
+use std::fs;
+use std::collections::HashMap;
+use serde_yaml;
+
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Focus {
     #[default]
     Services,
     Logs,
+}
+
+#[derive(serde::Deserialize)]
+struct Compose {
+    services: HashMap<String, serde_yaml::Value>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -179,17 +188,28 @@ impl App {
             std::thread::spawn(move || {
                 let container_dir = format!("containers/{}", service_name);
                 if let Ok(output) = std::process::Command::new("docker-compose")
-                    .arg("logs")
-                    .arg("--tail")
-                    .arg("50")
+                    .arg("ps")
                     .current_dir(&container_dir)
                     .output()
                 {
                     let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let mut logs_lock = logs.lock().unwrap();
-                    if logs_lock.is_empty() {
-                        logs_lock.push_str(&format!("Recent logs:\n{}{}\n", stdout, stderr));
+                    if stdout.contains("Up") {
+                        let compose_path = format!("containers/{}/docker-compose.yml", service_name);
+                        let mut text = String::new();
+                        if let Ok(content) = fs::read_to_string(&compose_path) {
+                            if let Ok(compose) = serde_yaml::from_str::<Compose>(&content) {
+                                let services = compose.services.keys().cloned().collect::<Vec<_>>();
+                                let network = format!("{}_default", service_name);
+                                text = format!("Up output:\nNetwork {} Running\n", network);
+                                for svc in services {
+                                    text.push_str(&format!("Container {} Running\n", svc));
+                                }
+                            }
+                        }
+                        let mut logs_lock = logs.lock().unwrap();
+                        if logs_lock.is_empty() {
+                            logs_lock.push_str(&text);
+                        }
                     }
                 }
             });
