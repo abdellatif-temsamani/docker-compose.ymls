@@ -15,3 +15,5 @@ toggle = " "
 
 [logs]
 toggle_auto_scroll = " "
+switch_tab_left = "t"
+switch_tab_right = "T"

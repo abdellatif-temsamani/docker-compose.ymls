@@ -261,9 +261,17 @@ impl App {
                 self.toast_timer = 4;
                 return;
             }
-            *service.status.lock().unwrap() = Status::Stopping;
+             *service.status.lock().unwrap() = Status::Stopping;
 
-            // Clone the service name for the thread
+             // Clear live logs
+             *service.live_logs.lock().unwrap() = String::new();
+
+             // Kill the logs child process if running
+             if let Some(mut child) = service.logs_child.lock().unwrap().take() {
+                 let _ = child.kill();
+             }
+
+             // Clone the service name for the thread
             let service_name = service.name.clone();
             let service_name_for_toast = service_name.clone();
             let container_dir = format!("containers/{}", service_name);

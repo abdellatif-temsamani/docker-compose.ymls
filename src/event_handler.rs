@@ -20,6 +20,8 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                 let daemon_key = app.keybinds.app.daemon_menu.chars().next().unwrap_or('d');
                 let scroll_down_key = app.keybinds.app.scroll_down.chars().next().unwrap_or('j');
                 let scroll_up_key = app.keybinds.app.scroll_up.chars().next().unwrap_or('k');
+                let switch_tab_left_key = app.keybinds.logs.switch_tab_left.chars().next().unwrap_or('[');
+                let switch_tab_right_key = app.keybinds.logs.switch_tab_right.chars().next().unwrap_or(']');
 
                 match key.code {
                     KeyCode::Char(c) if c == quit_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
@@ -178,14 +180,32 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                                    app.log_auto_scroll = !app.log_auto_scroll;
                                }
                            }
-                          KeyCode::Char(c) if c == app.keybinds.app.refresh.chars().next().unwrap_or('r') => {
-                             app.refresh_statuses();
-                             app.toast = Some(Toast {
-                                 state: ToastState::Info,
-                                 message: "Refreshed statuses".to_string(),
-                             });
-                             app.toast_timer = 3;
-                         }
+                            KeyCode::Char(c) if c == app.keybinds.app.refresh.chars().next().unwrap_or('r') => {
+                              app.refresh_statuses();
+                              app.toast = Some(Toast {
+                                  state: ToastState::Info,
+                                  message: "Refreshed statuses".to_string(),
+                              });
+                              app.toast_timer = 3;
+                          }
+                          KeyCode::Char(c) if c == switch_tab_left_key && app.focus == crate::app::Focus::Logs => {
+                              app.log_tab = match app.log_tab {
+                                  crate::app::LogTab::Events => crate::app::LogTab::LiveLogs,
+                                  crate::app::LogTab::LiveLogs => crate::app::LogTab::Events,
+                              };
+                              if app.log_tab == crate::app::LogTab::LiveLogs {
+                                  app.log_auto_scroll = true;
+                              }
+                          }
+                          KeyCode::Char(c) if c == switch_tab_right_key && app.focus == crate::app::Focus::Logs => {
+                              app.log_tab = match app.log_tab {
+                                  crate::app::LogTab::Events => crate::app::LogTab::LiveLogs,
+                                  crate::app::LogTab::LiveLogs => crate::app::LogTab::Events,
+                              };
+                              if app.log_tab == crate::app::LogTab::LiveLogs {
+                                  app.log_auto_scroll = true;
+                              }
+                          }
                     _ => {}
                 }
             }

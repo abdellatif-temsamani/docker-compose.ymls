@@ -8,13 +8,19 @@ use crate::toast::Toast;
 
 use std::fs;
 use std::collections::HashMap;
-use serde_yaml;
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Focus {
     #[default]
     Services,
     Logs,
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum LogTab {
+    #[default]
+    Events,
+    LiveLogs,
 }
 
 #[derive(serde::Deserialize)]
@@ -53,6 +59,7 @@ pub struct App {
     pub first_status_check: bool, // Track if this is the first status check
     pub log_scroll: u16,          // Scroll position for logs
     pub log_auto_scroll: bool,   // Whether to auto-scroll logs to bottom
+    pub log_tab: LogTab,         // Current log tab
     pub keybinds: Keybinds,
 }
 
@@ -151,11 +158,13 @@ impl App {
             state: ratatui::widgets::ListState::default(),
             services: service_names
                 .into_iter()
-                .map(|name| Service {
-                    name,
-                    status: Arc::new(Mutex::new(Status::Stopped)),
-                    logs: Arc::new(Mutex::new(String::new())),
-                })
+                 .map(|name| Service {
+                     name,
+                     status: Arc::new(Mutex::new(Status::Stopped)),
+                     logs: Arc::new(Mutex::new(String::new())),
+                     live_logs: Arc::new(Mutex::new(String::new())),
+                     logs_child: Arc::new(Mutex::new(None)),
+                 })
                 .collect(),
             toast,
             toast_timer,
@@ -173,6 +182,7 @@ impl App {
             first_status_check: true,
             log_scroll: 0,
             log_auto_scroll: true,
+            log_tab: LogTab::Events,
             keybinds,
         };
         app.refresh_statuses(); // Check current statuses
@@ -215,6 +225,7 @@ impl App {
                         }
                     }
                 }
+
             });
         }
     }
@@ -256,12 +267,13 @@ impl App {
         for service in &self.services {
             let service_name = service.name.clone();
             let status_clone = Arc::clone(&service.status);
+            let service_name_events = service_name.clone();
 
             std::thread::spawn(move || {
                 let mut cmd = std::process::Command::new("docker");
                 cmd.arg("events")
                     .arg("--filter")
-                    .arg(format!("label=com.docker.compose.project={}", service_name))
+                    .arg(format!("label=com.docker.compose.project={}", service_name_events))
                     .arg("--format")
                     .arg("{{.Action}}\t{{.Actor.Attributes.name}}");
 
@@ -270,29 +282,82 @@ impl App {
                         if let Some(stdout) = child.stdout.take() {
                             use std::io::{BufRead, BufReader};
                             let reader = BufReader::new(stdout);
-                            for line in reader.lines() {
-                                if let Ok(line) = line {
-                                    let parts: Vec<&str> = line.split('\t').collect();
-                                    if parts.len() >= 2 {
-                                        let action = parts[0];
-                                        let _container_name = parts[1];
+                            for line in reader.lines().flatten() {
+                                let parts: Vec<&str> = line.split('\t').collect();
+                                if parts.len() >= 2 {
+                                    let action = parts[0];
+                                    let _container_name = parts[1];
 
-                                        let new_status = match action {
-                                            "start" => Status::Running,
-                                            "stop" | "die" => Status::Stopped,
-                                            "create" => Status::Starting,
-                                            "destroy" => Status::Stopped,
-                                            _ => continue, // Ignore other events
-                                        };
+                                    let new_status = match action {
+                                        "start" => Status::Running,
+                                        "stop" | "die" => Status::Stopped,
+                                        "create" => Status::Starting,
+                                        "destroy" => Status::Stopped,
+                                        _ => continue, // Ignore other events
+                                    };
 
-                                        *status_clone.lock().unwrap() = new_status;
-                                    }
+                                    *status_clone.lock().unwrap() = new_status;
                                 }
                             }
                         }
                     }
                     Err(_) => {
                         // If docker events fails, fall back to polling
+                    }
+                }
+            });
+
+            // Start live logs listener
+            let service_name_logs = service_name.clone();
+            let live_logs_clone = Arc::clone(&service.live_logs);
+            let logs_child_clone = Arc::clone(&service.logs_child);
+            std::thread::spawn(move || {
+                let container_dir = format!("containers/{}", service_name_logs);
+
+                // Wait for container to start running
+                loop {
+                    match std::process::Command::new("docker-compose")
+                        .arg("ps")
+                        .current_dir(&container_dir)
+                        .output()
+                    {
+                        Ok(output) => {
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            if stdout.contains("Up") {
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            // If ps fails, ignore
+                            break;
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+
+                let mut cmd = std::process::Command::new("docker-compose");
+                cmd.arg("logs")
+                    .arg("-f") // Follow logs
+                    .arg("--tail=100") // Last 100 lines and follow
+                    .current_dir(&container_dir)
+                    .stdout(std::process::Stdio::piped());
+
+                match cmd.spawn() {
+                    Ok(mut child) => {
+                        let stdout = child.stdout.take();
+                        *logs_child_clone.lock().unwrap() = Some(child);
+                        if let Some(stdout) = stdout {
+                            use std::io::{BufRead, BufReader};
+                            let reader = BufReader::new(stdout);
+                            for line in reader.lines().flatten() {
+                                let mut logs = live_logs_clone.lock().unwrap();
+                                logs.push_str(&line);
+                                logs.push('\n');
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // If logs fail, ignore
                     }
                 }
             });

@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
-use crate::app::App;
+use crate::app::{App, LogTab};
 use crate::service::Service;
 use crate::status::Status;
 use crate::toast::create_toast_widget;
@@ -238,12 +238,25 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
 
     let logs_content = if let Some(i) = app.state.selected() {
         let service = &app.services[i];
-        let logs_string = service.logs.lock().unwrap().clone();
-        if logs_string.is_empty() {
-            Text::from("No startup logs yet - start the service to see docker-compose output")
-        } else {
-            colorize_logs(logs_string)
-        }
+        let logs_string = match app.log_tab {
+            LogTab::Events => {
+                let s = service.logs.lock().unwrap().clone();
+                if s.is_empty() {
+                    "No events yet - start the service to see events".to_string()
+                } else {
+                    s
+                }
+            }
+            LogTab::LiveLogs => {
+                let s = service.live_logs.lock().unwrap().clone();
+                if s.is_empty() {
+                    "No live logs yet - start the service to see logs".to_string()
+                } else {
+                    s
+                }
+            }
+        };
+        colorize_logs(logs_string)
     } else {
         Text::from("Select a service to view logs")
     };
@@ -252,13 +265,40 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         let mut spans = vec![
             Span::styled("Container Logs ", Style::default().fg(Color::White)),
             Span::styled("[FOCUSED]", Style::default().fg(Color::Blue).add_modifier(ratatui::style::Modifier::BOLD)),
+            Span::styled(" | ", Style::default().fg(Color::Gray)),
         ];
+        if app.log_tab == LogTab::Events {
+            spans.push(Span::styled("[Events]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+        } else {
+            spans.push(Span::styled("Events", Style::default().fg(Color::White)));
+        }
+        spans.push(Span::styled(" | ", Style::default().fg(Color::Gray)));
+        if app.log_tab == LogTab::LiveLogs {
+            spans.push(Span::styled("[Live Logs]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+        } else {
+            spans.push(Span::styled("Live Logs", Style::default().fg(Color::White)));
+        }
         if app.log_auto_scroll {
             spans.push(Span::styled(" [AUTO]", Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD)));
         }
         Line::from(spans)
     } else {
-        Line::from("Container Logs")
+        let mut spans = vec![
+            Span::styled("Container Logs", Style::default().fg(Color::White)),
+            Span::styled(" | ", Style::default().fg(Color::Gray)),
+        ];
+        if app.log_tab == LogTab::Events {
+            spans.push(Span::styled("[Events]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+        } else {
+            spans.push(Span::styled("Events", Style::default().fg(Color::White)));
+        }
+        spans.push(Span::styled(" | ", Style::default().fg(Color::Gray)));
+        if app.log_tab == LogTab::LiveLogs {
+            spans.push(Span::styled("[Live Logs]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+        } else {
+            spans.push(Span::styled("Live Logs", Style::default().fg(Color::White)));
+        }
+        Line::from(spans)
     };
 
     let logs_border_color = if app.focus == crate::app::Focus::Logs {
@@ -270,8 +310,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     if app.log_auto_scroll {
         // Auto-scroll logs fully to bottom
         let total_lines = logs_content.lines.len() as u16;
-        // Subtract 3 for title (1) + top border (1) + bottom border (1)
-        let visible_lines = logs_rect.height.saturating_sub(3);
+        // Subtract 2 for borders
+        let visible_lines = logs_rect.height.saturating_sub(2);
         app.log_scroll = total_lines.saturating_sub(visible_lines);
     }
 
@@ -283,7 +323,6 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
                 .border_style(Style::default().fg(logs_border_color)),
         )
         .style(Style::default().fg(Color::White))
-        .wrap(ratatui::widgets::Wrap { trim: true })
         .scroll((app.log_scroll, 0));
     frame.render_widget(logs_widget, logs_rect);
 
@@ -317,10 +356,14 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     } else {
         // Focus on Logs
         help_spans.extend(vec![
-            Span::styled(format!("{}:", app.keybinds.app.focus_services), Style::default().fg(Color::Magenta)),
+            Span::styled(format!("{}:", app.keybinds.app.focus_services), Style::default().fg(Color::Yellow)),
             Span::styled("focus services ", Style::default().fg(Color::White)),
             Span::styled(if app.keybinds.logs.toggle_auto_scroll == " " { "space:".to_string() } else { format!("{}:", app.keybinds.logs.toggle_auto_scroll) }, Style::default().fg(Color::Green)),
             Span::styled("toggle auto-scroll ", Style::default().fg(Color::White)),
+            Span::styled(format!("{}:", app.keybinds.logs.switch_tab_left), Style::default().fg(Color::Cyan)),
+            Span::styled("prev tab ", Style::default().fg(Color::White)),
+            Span::styled(format!("{}:", app.keybinds.logs.switch_tab_right), Style::default().fg(Color::Cyan)),
+            Span::styled("next tab ", Style::default().fg(Color::White)),
         ]);
     }
 
