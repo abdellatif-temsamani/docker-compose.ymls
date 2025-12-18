@@ -65,29 +65,17 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         4 // 4 lines on large terminals
     };
 
-    let chunks = if app.search_mode {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(5),
-                Constraint::Min(controls_height),
-            ])
-            .split(frame.area())
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(controls_height),
-                Constraint::Length(controls_height),
-            ])
-            .split(frame.area())
-    };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(controls_height),
+        ])
+        .split(frame.area());
 
     let filtered_services: Vec<&Service> =
-        if app.search_mode && !app.search_query.is_empty() {
+        if app.focus == crate::app::Focus::Services && app.search_mode && !app.search_query.is_empty() {
             app.services
                 .iter()
                 .filter(|s| s.name.contains(&app.search_query))
@@ -124,16 +112,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         .collect();
 
     let clock_start = 0;
-    let list_start = if app.search_mode {
-        2
-    } else {
-        1
-    };
-    let help_start = if app.search_mode {
-        3
-    } else {
-        2
-    };
+    let list_start = 1;
+    let help_start = 2;
 
     let highlight_style = if let Some(i) = app.state.selected() {
         let status = app.services[i].status.lock().unwrap().clone();
@@ -222,17 +202,7 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         );
     frame.render_widget(status_bar, chunks[clock_start]);
 
-    if app.search_mode {
-        let search = Paragraph::new(format!("/{}", app.search_query))
-            .block(
-                Block::default()
-                    .title("Search")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::White)),
-            )
-            .style(Style::default().fg(Color::White));
-        frame.render_widget(search, chunks[1]);
-    }
+
 
     // Responsive horizontal split based on terminal width
     let frame_width = frame.area().width;
@@ -247,7 +217,24 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     let [list_rect, logs_rect] =
         Layout::horizontal([Constraint::Percentage(services_percentage), Constraint::Percentage(100 - services_percentage)])
             .areas(chunks[list_start]);
-    frame.render_stateful_widget(list, list_rect, &mut app.state);
+
+    let services_list_rect = if app.focus == crate::app::Focus::Services && app.search_mode {
+        let [search_rect, actual_list_rect] = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(list_rect);
+        let search = Paragraph::new(format!("/{}", app.search_query))
+            .block(
+                Block::default()
+                    .title("Search")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::White)),
+            )
+            .style(Style::default().fg(Color::White));
+        frame.render_widget(search, search_rect);
+        actual_list_rect
+    } else {
+        list_rect
+    };
+
+    frame.render_stateful_widget(list, services_list_rect, &mut app.state);
 
     let logs_content = if let Some(i) = app.state.selected() {
         let service = &app.services[i];
@@ -310,6 +297,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
 
     if app.focus == crate::app::Focus::Services {
         help_spans.extend(vec![
+            Span::styled(format!("{}:", app.keybinds.app.scroll_down), Style::default().fg(Color::Yellow)),
+            Span::styled("nav ", Style::default().fg(Color::White)),
             Span::styled("Tab:", Style::default().fg(Color::Yellow)),
             Span::styled("nav ", Style::default().fg(Color::White)),
             Span::styled(if app.keybinds.services.toggle == " " { "space:".to_string() } else { format!("{}:", app.keybinds.services.toggle) }, Style::default().fg(Color::Green)),
@@ -322,6 +311,8 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             Span::styled("refresh ", Style::default().fg(Color::White)),
             Span::styled(format!("{}:", app.keybinds.app.focus_logs), Style::default().fg(Color::Magenta)),
             Span::styled("focus logs ", Style::default().fg(Color::White)),
+            Span::styled(format!("{}:", app.keybinds.app.search), Style::default().fg(Color::Blue)),
+            Span::styled("search ", Style::default().fg(Color::White)),
         ]);
     } else {
         // Focus on Logs
@@ -334,8 +325,6 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     }
 
     help_spans.extend(vec![
-        Span::styled(format!("{}:", app.keybinds.app.search), Style::default().fg(Color::Blue)),
-        Span::styled("search ", Style::default().fg(Color::White)),
         Span::styled(format!("{}:", app.keybinds.app.daemon_menu), Style::default().fg(Color::Yellow)),
         Span::styled("daemon ", Style::default().fg(Color::White)),
         Span::styled(format!("{}:", app.keybinds.app.quit), Style::default().fg(Color::Red)),

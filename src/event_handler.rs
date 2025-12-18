@@ -25,7 +25,7 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                     KeyCode::Char(c) if c == quit_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
                         return Ok(false); // Exit the application
                     }
-                    KeyCode::Char(c) if c == search_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode => {
+                    KeyCode::Char(c) if c == search_key && !app.search_mode && !app.daemon_start_mode && !app.daemon_menu_mode && app.focus == crate::app::Focus::Services => {
                         app.search_mode = true;
                         app.search_query.clear();
                     }
