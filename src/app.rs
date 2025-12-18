@@ -311,53 +311,66 @@ impl App {
             let service_name_logs = service_name.clone();
             let live_logs_clone = Arc::clone(&service.live_logs);
             let logs_child_clone = Arc::clone(&service.logs_child);
+            let status_clone = Arc::clone(&service.status);
             std::thread::spawn(move || {
                 let container_dir = format!("containers/{}", service_name_logs);
 
-                // Wait for container to start running
                 loop {
-                    match std::process::Command::new("docker-compose")
-                        .arg("ps")
+                    // Wait for container to start running
+                    loop {
+                        match std::process::Command::new("docker-compose")
+                            .arg("ps")
+                            .current_dir(&container_dir)
+                            .output()
+                        {
+                            Ok(output) => {
+                                let stdout = String::from_utf8_lossy(&output.stdout);
+                                if stdout.contains("Up") {
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                // If ps fails, wait and retry
+                            }
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+
+                    let mut cmd = std::process::Command::new("docker-compose");
+                    cmd.arg("logs")
+                        .arg("-f") // Follow logs
+                        .arg("--tail=100") // Last 100 lines and follow
                         .current_dir(&container_dir)
-                        .output()
-                    {
-                        Ok(output) => {
-                            let stdout = String::from_utf8_lossy(&output.stdout);
-                            if stdout.contains("Up") {
-                                break;
+                        .stdout(std::process::Stdio::piped());
+
+                    match cmd.spawn() {
+                        Ok(mut child) => {
+                            let stdout = child.stdout.take();
+                            *logs_child_clone.lock().unwrap() = Some(child);
+                            if let Some(stdout) = stdout {
+                                use std::io::{BufRead, BufReader};
+                                let reader = BufReader::new(stdout);
+                                for line in reader.lines().map_while(Result::ok) {
+                                    // Check status before adding line
+                                    if *status_clone.lock().unwrap() != Status::Running {
+                                        // Kill the logs process and clear logs
+                                        if let Some(mut child) = logs_child_clone.lock().unwrap().take() {
+                                            let _ = child.kill();
+                                            let _ = child.wait();
+                                        }
+                                        live_logs_clone.lock().unwrap().clear();
+                                        break;
+                                    }
+                                    let mut logs = live_logs_clone.lock().unwrap();
+                                    logs.push_str(&line);
+                                    logs.push('\n');
+                                }
                             }
                         }
                         Err(_) => {
-                            // If ps fails, ignore
-                            break;
+                            // If logs fail, ignore and wait to retry
+                            std::thread::sleep(std::time::Duration::from_secs(1));
                         }
-                    }
-                    std::thread::sleep(std::time::Duration::from_secs(1));
-                }
-
-                let mut cmd = std::process::Command::new("docker-compose");
-                cmd.arg("logs")
-                    .arg("-f") // Follow logs
-                    .arg("--tail=100") // Last 100 lines and follow
-                    .current_dir(&container_dir)
-                    .stdout(std::process::Stdio::piped());
-
-                match cmd.spawn() {
-                    Ok(mut child) => {
-                        let stdout = child.stdout.take();
-                        *logs_child_clone.lock().unwrap() = Some(child);
-                        if let Some(stdout) = stdout {
-                            use std::io::{BufRead, BufReader};
-                            let reader = BufReader::new(stdout);
-                            for line in reader.lines().flatten() {
-                                let mut logs = live_logs_clone.lock().unwrap();
-                                logs.push_str(&line);
-                                logs.push('\n');
-                            }
-                        }
-                    }
-                    Err(_) => {
-                        // If logs fail, ignore
                     }
                 }
             });
