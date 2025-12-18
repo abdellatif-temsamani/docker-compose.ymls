@@ -2,7 +2,7 @@ use std::io;
 
 use chrono::prelude::*;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
@@ -374,17 +374,34 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         Span::styled("quit", Style::default().fg(Color::White)),
     ]);
 
+    // Split the controls bar into left and right
+    let [help_rect, name_version_rect] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(20)]).areas(chunks[help_start]);
+
     let help_text = Line::from(help_spans);
     let help = Paragraph::new(help_text)
         .block(
             Block::default()
                 .title("Controls")
-                .borders(Borders::ALL)
+                .borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM)
                 .border_style(Style::default().fg(Color::White)),
         )
         .wrap(ratatui::widgets::Wrap { trim: true });
 
-    frame.render_widget(help, chunks[help_start]);
+    frame.render_widget(help, help_rect);
+
+    let name_version_text = Line::from(vec![
+        Span::styled("docker-manager", Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)),
+        Span::styled(" v0.1.0", Style::default().fg(Color::Gray)),
+    ]);
+    let name_version_bar = Paragraph::new(name_version_text)
+        .block(
+            Block::default()
+                .borders(Borders::RIGHT | Borders::TOP | Borders::BOTTOM)
+                .border_style(Style::default().fg(Color::White)),
+        )
+        .alignment(Alignment::Right);
+    frame.render_widget(name_version_bar, name_version_rect);
 
     if app.daemon_menu_mode {
         // Clear and overlay the entire screen
