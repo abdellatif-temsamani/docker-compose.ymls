@@ -6,8 +6,8 @@ use crate::service::Service;
 use crate::status::{Status, ToastState};
 use crate::toast::Toast;
 
-use std::fs;
 use std::collections::HashMap;
+use std::fs;
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Focus {
@@ -28,17 +28,13 @@ struct Compose {
     services: HashMap<String, serde_yaml::Value>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum DaemonAction {
     #[default]
     Start,
     Stop,
     Restart,
 }
-
-
-
 
 pub struct App {
     pub state: ratatui::widgets::ListState,
@@ -58,8 +54,8 @@ pub struct App {
     pub focus: Focus,             // Current focus area
     pub first_status_check: bool, // Track if this is the first status check
     pub log_scroll: u16,          // Scroll position for logs
-    pub log_auto_scroll: bool,   // Whether to auto-scroll logs to bottom
-    pub log_tab: LogTab,         // Current log tab
+    pub log_auto_scroll: bool,    // Whether to auto-scroll logs to bottom
+    pub log_tab: LogTab,          // Current log tab
     pub keybinds: Keybinds,
 }
 
@@ -158,13 +154,13 @@ impl App {
             state: ratatui::widgets::ListState::default(),
             services: service_names
                 .into_iter()
-                 .map(|name| Service {
-                     name,
-                     status: Arc::new(Mutex::new(Status::Stopped)),
-                     logs: Arc::new(Mutex::new(String::new())),
-                     live_logs: Arc::new(Mutex::new(String::new())),
-                     logs_child: Arc::new(Mutex::new(None)),
-                 })
+                .map(|name| Service {
+                    name,
+                    status: Arc::new(Mutex::new(Status::Stopped)),
+                    logs: Arc::new(Mutex::new(String::new())),
+                    live_logs: Arc::new(Mutex::new(String::new())),
+                    logs_child: Arc::new(Mutex::new(None)),
+                })
                 .collect(),
             toast,
             toast_timer,
@@ -178,7 +174,7 @@ impl App {
             daemon_action_selected: DaemonAction::Start,
             daemon_start_mode: false,
             password_input: String::new(),
-            focus: Focus::Services,  // Start focused on services
+            focus: Focus::Services, // Start focused on services
             first_status_check: true,
             log_scroll: 0,
             log_auto_scroll: true,
@@ -207,7 +203,8 @@ impl App {
                 {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     if stdout.contains("Up") {
-                        let compose_path = format!("containers/{}/docker-compose.yml", service_name);
+                        let compose_path =
+                            format!("containers/{}/docker-compose.yml", service_name);
                         let mut text = String::new();
                         if let Ok(content) = fs::read_to_string(&compose_path) {
                             if let Ok(compose) = serde_yaml::from_str::<Compose>(&content) {
@@ -225,7 +222,6 @@ impl App {
                         }
                     }
                 }
-
             });
         }
     }
@@ -273,7 +269,10 @@ impl App {
                 let mut cmd = std::process::Command::new("docker");
                 cmd.arg("events")
                     .arg("--filter")
-                    .arg(format!("label=com.docker.compose.project={}", service_name_events))
+                    .arg(format!(
+                        "label=com.docker.compose.project={}",
+                        service_name_events
+                    ))
                     .arg("--format")
                     .arg("{{.Action}}\t{{.Actor.Attributes.name}}");
 
@@ -354,7 +353,9 @@ impl App {
                                     // Check status before adding line
                                     if *status_clone.lock().unwrap() != Status::Running {
                                         // Kill the logs process and clear logs
-                                        if let Some(mut child) = logs_child_clone.lock().unwrap().take() {
+                                        if let Some(mut child) =
+                                            logs_child_clone.lock().unwrap().take()
+                                        {
                                             let _ = child.kill();
                                             let _ = child.wait();
                                         }
@@ -376,8 +377,4 @@ impl App {
             });
         }
     }
-
-
-
-
 }

@@ -32,4 +32,3 @@ pub enum ToastState {
     Error,
     Info,
 }
-
