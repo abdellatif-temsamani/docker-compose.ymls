@@ -109,76 +109,76 @@ impl App {
             *service.status.lock().unwrap() = Status::Pulling;
 
             // Clone necessary data for the thread
-            let service_name = service.name.clone();
-            let service_name_for_toast = service_name.clone();
-            let container_dir = format!("containers/{}", service_name);
-            let logs = Arc::clone(&service.logs);
+             let service_name = service.name.clone();
+             let service_name_for_toast = service_name.clone();
+             let container_dir = format!("containers/{}", service_name);
+             let logs = Arc::clone(&service.logs);
+             let status = Arc::clone(&service.status);
 
-            // Spawn a thread to handle the service startup process
-            thread::spawn(move || {
-                // Clear previous logs
-                {
-                    let mut logs_lock = logs.lock().unwrap();
-                    logs_lock.clear();
-                }
+             // Spawn a thread to handle the service startup process
+             thread::spawn(move || {
+                 // Clear previous logs
+                 {
+                     let mut logs_lock = logs.lock().unwrap();
+                     logs_lock.clear();
+                 }
 
-                // Phase 1: Pull images
-                let pull_success = match Command::new("docker-compose")
-                    .arg("pull")
-                    .current_dir(&container_dir)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(mut child) => {
-                        {
-                            let mut logs_lock = logs.lock().unwrap();
-                            logs_lock.push_str("Pull output:\n");
-                        }
+                 // Phase 1: Pull images
+                 let pull_success = match Command::new("docker-compose")
+                     .arg("pull")
+                     .current_dir(&container_dir)
+                     .stdout(Stdio::piped())
+                     .stderr(Stdio::piped())
+                     .spawn()
+                 {
+                     Ok(mut child) => {
+                         {
+                             let mut logs_lock = logs.lock().unwrap();
+                             logs_lock.push_str("Pull output:\n");
+                         }
 
-                        let logs_stdout = Arc::clone(&logs);
-                        if let Some(stdout) = child.stdout.take() {
-                            thread::spawn(move || {
-                                let reader = BufReader::new(stdout);
-                                for line in reader.lines().filter_map(Result::ok) {
-                                    let mut logs_lock = logs_stdout.lock().unwrap();
-                                    logs_lock.push_str(&format!("{}\n", line));
-                                }
-                            });
-                        }
+                         let logs_stdout = Arc::clone(&logs);
+                         if let Some(stdout) = child.stdout.take() {
+                             thread::spawn(move || {
+                                 let reader = BufReader::new(stdout);
+                                 for line in reader.lines().filter_map(Result::ok) {
+                                     let mut logs_lock = logs_stdout.lock().unwrap();
+                                     logs_lock.push_str(&format!("{}\n", line));
+                                 }
+                             });
+                         }
 
-                        let logs_stderr = Arc::clone(&logs);
-                        if let Some(stderr) = child.stderr.take() {
-                            thread::spawn(move || {
-                                let reader = BufReader::new(stderr);
-                                for line in reader.lines().filter_map(Result::ok) {
-                                    let mut logs_lock = logs_stderr.lock().unwrap();
-                                    logs_lock.push_str(&format!("{}\n", line));
-                                }
-                            });
-                        }
+                         let logs_stderr = Arc::clone(&logs);
+                         if let Some(stderr) = child.stderr.take() {
+                             thread::spawn(move || {
+                                 let reader = BufReader::new(stderr);
+                                 for line in reader.lines().filter_map(Result::ok) {
+                                     let mut logs_lock = logs_stderr.lock().unwrap();
+                                     logs_lock.push_str(&format!("{}\n", line));
+                                 }
+                             });
+                         }
 
-                        match child.wait() {
-                            Ok(status) => status.success(),
-                            Err(_) => false,
-                        }
-                    }
-                    Err(e) => {
-                        let mut logs_lock = logs.lock().unwrap();
-                        logs_lock.push_str(&format!("Pull failed: {}\n", e));
-                        false
-                    }
-                };
+                         match child.wait() {
+                             Ok(status) => status.success(),
+                             Err(_) => false,
+                         }
+                     }
+                     Err(e) => {
+                         let mut logs_lock = logs.lock().unwrap();
+                         logs_lock.push_str(&format!("Pull failed: {}\n", e));
+                         false
+                     }
+                 };
 
-                if !pull_success {
-                    // Set status to Error if pull failed
-                    // Note: We can't directly modify service.status here as it's not in scope
-                    // The refresh_statuses() will handle detecting this via logs or lack of transition
-                    return;
-                }
+                 if !pull_success {
+                     // Set status to Error if pull failed
+                     *status.lock().unwrap() = Status::Error;
+                     return;
+                 }
 
-                // Phase 2: Start containers (transition to Starting status)
-                // Note: Status transition to Starting happens in refresh_statuses()
+                 // Phase 2: Start containers (transition to Starting status)
+                 *status.lock().unwrap() = Status::Starting;
 
                 match Command::new("docker-compose")
                     .arg("up")
@@ -216,14 +216,41 @@ impl App {
                             });
                         }
 
-                        let _ = child.wait(); // We don't care about success here, as status is checked elsewhere
-                    }
-                    Err(e) => {
-                        let mut logs_lock = logs.lock().unwrap();
-                        logs_lock.push_str(&format!("Up failed: {}\n", e));
-                    }
-                }
-            });
+                         let _ = child.wait(); // We don't care about success here, as status is checked elsewhere
+
+                         // Fallback status check after up completes
+                         std::thread::sleep(std::time::Duration::from_millis(500));
+                         match Command::new("docker")
+                             .arg("ps")
+                             .arg("--filter")
+                             .arg(format!("label=com.docker.compose.project={}", service_name))
+                             .arg("--format")
+                             .arg("{{.Names}}\t{{.Status}}")
+                             .output()
+                         {
+                             Ok(out) => {
+                                 let stdout = String::from_utf8_lossy(&out.stdout);
+                                 let lines: Vec<&str> = stdout.trim().lines().collect();
+                                 let has_running = lines.iter().any(|line|
+                                     line.split('\t').nth(1)
+                                         .map(|status| status.starts_with("Up"))
+                                         .unwrap_or(false)
+                                 );
+                                 let new_status = if has_running { Status::Running } else { Status::Error };
+                                 *status.lock().unwrap() = new_status;
+                             }
+                             Err(_) => {
+                                 *status.lock().unwrap() = Status::Error;
+                             }
+                         }
+                     }
+                     Err(e) => {
+                         let mut logs_lock = logs.lock().unwrap();
+                         logs_lock.push_str(&format!("Up failed: {}\n", e));
+                         *status.lock().unwrap() = Status::Error;
+                     }
+                 }
+             });
 
             self.toast = Some(Toast {
                 state: ToastState::Success,
@@ -272,13 +299,14 @@ impl App {
              }
 
              // Clone the service name for the thread
-            let service_name = service.name.clone();
-            let service_name_for_toast = service_name.clone();
-            let container_dir = format!("containers/{}", service_name);
-            let logs = Arc::clone(&service.logs);
+             let service_name = service.name.clone();
+             let service_name_for_toast = service_name.clone();
+             let container_dir = format!("containers/{}", service_name);
+             let logs = Arc::clone(&service.logs);
+             let status = Arc::clone(&service.status);
 
-            // Spawn a thread to handle the service shutdown
-            thread::spawn(move || {
+             // Spawn a thread to handle the service shutdown
+             thread::spawn(move || {
                 match Command::new("docker-compose")
                     .arg("down")
                     .current_dir(&container_dir)
@@ -314,13 +342,40 @@ impl App {
                             });
                         }
 
-                        let _ = child.wait();
-                    }
-                    Err(e) => {
-                        let mut logs_lock = logs.lock().unwrap();
-                        logs_lock.push_str(&format!("Down failed: {}\n", e));
-                    }
-                }
+                         let _ = child.wait();
+
+                         // Fallback status check after down completes
+                         std::thread::sleep(std::time::Duration::from_millis(500));
+                         match Command::new("docker")
+                             .arg("ps")
+                             .arg("--filter")
+                             .arg(format!("label=com.docker.compose.project={}", service_name))
+                             .arg("--format")
+                             .arg("{{.Names}}\t{{.Status}}")
+                             .output()
+                         {
+                             Ok(out) => {
+                                 let stdout = String::from_utf8_lossy(&out.stdout);
+                                 let lines: Vec<&str> = stdout.trim().lines().collect();
+                                 let has_running = lines.iter().any(|line|
+                                     line.split('\t').nth(1)
+                                         .map(|status| status.starts_with("Up"))
+                                         .unwrap_or(false)
+                                 );
+                                 let new_status = if has_running { Status::Running } else { Status::Stopped };
+                                 *status.lock().unwrap() = new_status;
+                             }
+                             Err(_) => {
+                                 *status.lock().unwrap() = Status::Stopped; // Assume stopped if can't check
+                             }
+                         }
+                     }
+                     Err(e) => {
+                         let mut logs_lock = logs.lock().unwrap();
+                         logs_lock.push_str(&format!("Down failed: {}\n", e));
+                         *status.lock().unwrap() = Status::Error;
+                     }
+                 }
             });
 
             self.toast = Some(Toast {
