@@ -49,7 +49,8 @@ impl ComposeProject {
         cmd.arg("logs")
             .arg("-f")
             .arg("--tail=100")
-            .stdout(Stdio::piped());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
         cmd.spawn()
     }
 }
