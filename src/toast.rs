@@ -23,7 +23,11 @@ pub fn create_toast_widget(toast: &Toast) -> Paragraph<'_> {
             Block::default()
                 .title("Notification")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD))
+                .border_style(
+                    Style::default()
+                        .fg(border_color)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .style(Style::default().bg(bg_color).fg(fg_color)),
         )
         .wrap(ratatui::widgets::Wrap { trim: true })

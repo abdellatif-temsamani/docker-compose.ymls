@@ -19,32 +19,52 @@ fn colorize_logs(logs: String) -> Text<'static> {
     for line in logs.lines() {
         let line_str = line.to_string();
         if line_str.starts_with("Pull output:") {
-            lines.push(Line::from(vec![
-                Span::styled("Pull output:", Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "Pull output:",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )]));
         } else if line_str.starts_with("Up output:") {
-            lines.push(Line::from(vec![
-                Span::styled("Up output:", Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "Up output:",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )]));
         } else if line_str.starts_with("Down output:") {
-            lines.push(Line::from(vec![
-                Span::styled("Down output:", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-            ]));
-        } else if line_str.contains("failed") || line_str.contains("Failed") || line_str.contains("error") || line_str.contains("Error") {
-            lines.push(Line::from(vec![
-                Span::styled(line_str, Style::default().fg(Color::Red)),
-            ]));
-        } else if line_str.contains("success") || line_str.contains("Success") || line_str.contains("done") || line_str.contains("Done") {
-            lines.push(Line::from(vec![
-                Span::styled(line_str, Style::default().fg(Color::Green)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "Down output:",
+                Style::default()
+                    .fg(Color::Red)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )]));
+        } else if line_str.contains("failed")
+            || line_str.contains("Failed")
+            || line_str.contains("error")
+            || line_str.contains("Error")
+        {
+            lines.push(Line::from(vec![Span::styled(
+                line_str,
+                Style::default().fg(Color::Red),
+            )]));
+        } else if line_str.contains("success")
+            || line_str.contains("Success")
+            || line_str.contains("done")
+            || line_str.contains("Done")
+        {
+            lines.push(Line::from(vec![Span::styled(
+                line_str,
+                Style::default().fg(Color::Green),
+            )]));
         } else if line_str.trim().is_empty() {
             lines.push(Line::from(""));
         } else {
             // Default color for other log lines
-            lines.push(Line::from(vec![
-                Span::styled(line_str, Style::default().fg(Color::White)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                line_str,
+                Style::default().fg(Color::White),
+            )]));
         }
     }
 
@@ -74,15 +94,17 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         ])
         .split(frame.area());
 
-    let filtered_services: Vec<&Service> =
-        if app.focus == crate::app::Focus::Services && app.search_mode && !app.search_query.is_empty() {
-            app.services
-                .iter()
-                .filter(|s| s.name.contains(&app.search_query))
-                .collect()
-        } else {
-            app.services.iter().collect()
-        };
+    let filtered_services: Vec<&Service> = if app.focus == crate::app::Focus::Services
+        && app.search_mode
+        && !app.search_query.is_empty()
+    {
+        app.services
+            .iter()
+            .filter(|s| s.name.contains(&app.search_query))
+            .collect()
+    } else {
+        app.services.iter().collect()
+    };
 
     let items: Vec<ListItem> = filtered_services
         .iter()
@@ -102,8 +124,13 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
                 let spinner_idx = (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_millis() / 100) % spinner_chars.len() as u128;
-                format!("{}: {} {}", service.name, status, spinner_chars[spinner_idx as usize])
+                    .as_millis()
+                    / 100)
+                    % spinner_chars.len() as u128;
+                format!(
+                    "{}: {} {}",
+                    service.name, status, spinner_chars[spinner_idx as usize]
+                )
             } else {
                 format!("{}: {}", service.name, status)
             };
@@ -128,7 +155,12 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     let services_title = if app.focus == crate::app::Focus::Services {
         Line::from(vec![
             Span::styled("Docker Services ", Style::default().fg(Color::White)),
-            Span::styled("[FOCUSED]", Style::default().fg(Color::Blue).add_modifier(ratatui::style::Modifier::BOLD)),
+            Span::styled(
+                "[FOCUSED]",
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ),
         ])
     } else {
         Line::from("Docker Services")
@@ -184,25 +216,28 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     };
 
     let status_line = Line::from(vec![
-        Span::styled(format!("{} ", now.format("%H:%M:%S")), Style::default().fg(Color::White)),
+        Span::styled(
+            format!("{} ", now.format("%H:%M:%S")),
+            Style::default().fg(Color::White),
+        ),
         Span::styled("| ", Style::default().fg(Color::Gray)),
         Span::styled(docker_status_text, Style::default().fg(docker_color)),
         Span::styled(" | ", Style::default().fg(Color::Gray)),
         Span::styled(docker_cli_text, Style::default().fg(docker_cli_color)),
         Span::styled(" | ", Style::default().fg(Color::Gray)),
-        Span::styled(docker_compose_text, Style::default().fg(docker_compose_color)),
+        Span::styled(
+            docker_compose_text,
+            Style::default().fg(docker_compose_color),
+        ),
     ]);
 
-    let status_bar = Paragraph::new(status_line)
-        .block(
-            Block::default()
-                .title("Status")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::White)),
-        );
+    let status_bar = Paragraph::new(status_line).block(
+        Block::default()
+            .title("Status")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::White)),
+    );
     frame.render_widget(status_bar, chunks[clock_start]);
-
-
 
     // Responsive horizontal split based on terminal width
     let frame_width = frame.area().width;
@@ -214,12 +249,15 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         35 // Wide terminals: larger services panel for better readability
     };
 
-    let [list_rect, logs_rect] =
-        Layout::horizontal([Constraint::Percentage(services_percentage), Constraint::Percentage(100 - services_percentage)])
-            .areas(chunks[list_start]);
+    let [list_rect, logs_rect] = Layout::horizontal([
+        Constraint::Percentage(services_percentage),
+        Constraint::Percentage(100 - services_percentage),
+    ])
+    .areas(chunks[list_start]);
 
     let services_list_rect = if app.focus == crate::app::Focus::Services && app.search_mode {
-        let [search_rect, actual_list_rect] = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(list_rect);
+        let [search_rect, actual_list_rect] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(list_rect);
         let search = Paragraph::new(format!("/{}", app.search_query))
             .block(
                 Block::default()
@@ -264,22 +302,42 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     let logs_title = if app.focus == crate::app::Focus::Logs {
         let mut spans = vec![
             Span::styled("Container Logs ", Style::default().fg(Color::White)),
-            Span::styled("[FOCUSED]", Style::default().fg(Color::Blue).add_modifier(ratatui::style::Modifier::BOLD)),
+            Span::styled(
+                "[FOCUSED]",
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ),
             Span::styled(" | ", Style::default().fg(Color::Gray)),
         ];
         if app.log_tab == LogTab::Events {
-            spans.push(Span::styled("[Events]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+            spans.push(Span::styled(
+                "[Events]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ));
         } else {
             spans.push(Span::styled("Events", Style::default().fg(Color::White)));
         }
         spans.push(Span::styled(" | ", Style::default().fg(Color::Gray)));
         if app.log_tab == LogTab::LiveLogs {
-            spans.push(Span::styled("[Live Logs]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+            spans.push(Span::styled(
+                "[Live Logs]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ));
         } else {
             spans.push(Span::styled("Live Logs", Style::default().fg(Color::White)));
         }
         if app.log_auto_scroll {
-            spans.push(Span::styled(" [AUTO]", Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD)));
+            spans.push(Span::styled(
+                " [AUTO]",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ));
         }
         Line::from(spans)
     } else {
@@ -288,13 +346,23 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             Span::styled(" | ", Style::default().fg(Color::Gray)),
         ];
         if app.log_tab == LogTab::Events {
-            spans.push(Span::styled("[Events]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+            spans.push(Span::styled(
+                "[Events]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ));
         } else {
             spans.push(Span::styled("Events", Style::default().fg(Color::White)));
         }
         spans.push(Span::styled(" | ", Style::default().fg(Color::Gray)));
         if app.log_tab == LogTab::LiveLogs {
-            spans.push(Span::styled("[Live Logs]", Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD)));
+            spans.push(Span::styled(
+                "[Live Logs]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            ));
         } else {
             spans.push(Span::styled("Live Logs", Style::default().fg(Color::White)));
         }
@@ -326,51 +394,106 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         .scroll((app.log_scroll, 0));
     frame.render_widget(logs_widget, logs_rect);
 
-
-
-    let nav_label = if app.focus == crate::app::Focus::Services { "nav " } else { "scroll " };
+    let nav_label = if app.focus == crate::app::Focus::Services {
+        "nav "
+    } else {
+        "scroll "
+    };
     let mut help_spans = vec![
-        Span::styled(format!("{}/{}/↑↓:", app.keybinds.app.scroll_down, app.keybinds.app.scroll_up), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!(
+                "{}/{}/↑↓:",
+                app.keybinds.app.scroll_down, app.keybinds.app.scroll_up
+            ),
+            Style::default().fg(Color::Yellow),
+        ),
         Span::styled(nav_label, Style::default().fg(Color::White)),
     ];
 
     if app.focus == crate::app::Focus::Services {
         help_spans.extend(vec![
-            Span::styled(format!("{}:", app.keybinds.app.scroll_down), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("{}:", app.keybinds.app.scroll_down),
+                Style::default().fg(Color::Yellow),
+            ),
             Span::styled("nav ", Style::default().fg(Color::White)),
             Span::styled("Tab:", Style::default().fg(Color::Yellow)),
             Span::styled("nav ", Style::default().fg(Color::White)),
-            Span::styled(if app.keybinds.services.toggle == " " { "space:".to_string() } else { format!("{}:", app.keybinds.services.toggle) }, Style::default().fg(Color::Green)),
+            Span::styled(
+                if app.keybinds.services.toggle == " " {
+                    "space:".to_string()
+                } else {
+                    format!("{}:", app.keybinds.services.toggle)
+                },
+                Style::default().fg(Color::Green),
+            ),
             Span::styled("toggle ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.services.start), Style::default().fg(Color::Green)),
+            Span::styled(
+                format!("{}:", app.keybinds.services.start),
+                Style::default().fg(Color::Green),
+            ),
             Span::styled("start ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.services.stop), Style::default().fg(Color::Red)),
+            Span::styled(
+                format!("{}:", app.keybinds.services.stop),
+                Style::default().fg(Color::Red),
+            ),
             Span::styled("stop ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.app.refresh), Style::default().fg(Color::Red)),
+            Span::styled(
+                format!("{}:", app.keybinds.app.refresh),
+                Style::default().fg(Color::Red),
+            ),
             Span::styled("refresh ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.app.focus_logs), Style::default().fg(Color::Magenta)),
+            Span::styled(
+                format!("{}:", app.keybinds.app.focus_logs),
+                Style::default().fg(Color::Magenta),
+            ),
             Span::styled("focus logs ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.app.search), Style::default().fg(Color::Blue)),
+            Span::styled(
+                format!("{}:", app.keybinds.app.search),
+                Style::default().fg(Color::Blue),
+            ),
             Span::styled("search ", Style::default().fg(Color::White)),
         ]);
     } else {
         // Focus on Logs
         help_spans.extend(vec![
-            Span::styled(format!("{}:", app.keybinds.app.focus_services), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("{}:", app.keybinds.app.focus_services),
+                Style::default().fg(Color::Yellow),
+            ),
             Span::styled("focus services ", Style::default().fg(Color::White)),
-            Span::styled(if app.keybinds.logs.toggle_auto_scroll == " " { "space:".to_string() } else { format!("{}:", app.keybinds.logs.toggle_auto_scroll) }, Style::default().fg(Color::Green)),
+            Span::styled(
+                if app.keybinds.logs.toggle_auto_scroll == " " {
+                    "space:".to_string()
+                } else {
+                    format!("{}:", app.keybinds.logs.toggle_auto_scroll)
+                },
+                Style::default().fg(Color::Green),
+            ),
             Span::styled("toggle auto-scroll ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.logs.switch_tab_left), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("{}:", app.keybinds.logs.switch_tab_left),
+                Style::default().fg(Color::Cyan),
+            ),
             Span::styled("prev tab ", Style::default().fg(Color::White)),
-            Span::styled(format!("{}:", app.keybinds.logs.switch_tab_right), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("{}:", app.keybinds.logs.switch_tab_right),
+                Style::default().fg(Color::Cyan),
+            ),
             Span::styled("next tab ", Style::default().fg(Color::White)),
         ]);
     }
 
     help_spans.extend(vec![
-        Span::styled(format!("{}:", app.keybinds.app.daemon_menu), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!("{}:", app.keybinds.app.daemon_menu),
+            Style::default().fg(Color::Yellow),
+        ),
         Span::styled("daemon ", Style::default().fg(Color::White)),
-        Span::styled(format!("{}:", app.keybinds.app.quit), Style::default().fg(Color::Red)),
+        Span::styled(
+            format!("{}:", app.keybinds.app.quit),
+            Style::default().fg(Color::Red),
+        ),
         Span::styled("quit", Style::default().fg(Color::White)),
     ]);
 
@@ -391,7 +514,12 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     frame.render_widget(help, help_rect);
 
     let name_version_text = Line::from(vec![
-        Span::styled("docker-manager", Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)),
+        Span::styled(
+            "docker-manager",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        ),
         Span::styled(" v0.1.0", Style::default().fg(Color::Gray)),
     ]);
     let name_version_bar = Paragraph::new(name_version_text)
@@ -409,9 +537,11 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         let bg_overlay = Block::default().style(Style::default().bg(Color::Black));
         frame.render_widget(bg_overlay, frame.area());
 
-        let menu_items = ["Start Docker Daemon",
+        let menu_items = [
+            "Start Docker Daemon",
             "Stop Docker Daemon",
-            "Restart Docker Daemon"];
+            "Restart Docker Daemon",
+        ];
 
         let menu_height = menu_items.len() as u16 + 4; // +4 for borders and title
         let menu_width = 30;
@@ -419,9 +549,14 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
         let mut list_items = Vec::new();
         for (i, item) in menu_items.iter().enumerate() {
             let style = if i == app.daemon_action_selected as usize {
-                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White).add_modifier(ratatui::style::Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
             };
             list_items.push(ratatui::widgets::ListItem::new(*item).style(style));
         }
@@ -430,9 +565,17 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             .block(
                 Block::default()
                     .title("Docker Daemon Control")
-                    .title_style(Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD))
+                    .title_style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    )
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD))
+                    .border_style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    )
                     .style(Style::default().bg(Color::Black)),
             )
             .style(Style::default().fg(Color::White).bg(Color::Black));
@@ -461,9 +604,17 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             .block(
                 Block::default()
                     .title(action_text)
-                    .title_style(Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD))
+                    .title_style(
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    )
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green).add_modifier(ratatui::style::Modifier::BOLD))
+                    .border_style(
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    )
                     .style(Style::default().bg(Color::Black)),
             )
             .style(Style::default().fg(Color::White).bg(Color::Black));

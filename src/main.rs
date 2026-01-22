@@ -1,6 +1,6 @@
-mod actions;
 mod app;
 mod config;
+mod docker;
 mod event_handler;
 mod service;
 mod status;
@@ -9,12 +9,12 @@ mod ui;
 
 use std::io;
 
-use ratatui::{DefaultTerminal, TerminalOptions, Viewport};
-use ratatui::prelude::CrosstermBackend;
 use ratatui::crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use ratatui::prelude::CrosstermBackend;
+use ratatui::{DefaultTerminal, TerminalOptions, Viewport};
 
 use app::App;
 use config::Keybinds;
@@ -39,7 +39,6 @@ async fn main() -> io::Result<()> {
     execute!(std::io::stdout(), LeaveAlternateScreen)?;
     app_result
 }
-
 
 async fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
     let keybinds = Keybinds::load();

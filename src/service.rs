@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use crate::status::Status;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct Service {
@@ -9,4 +9,3 @@ pub struct Service {
     pub live_logs: Arc<Mutex<String>>,
     pub logs_child: Arc<Mutex<Option<std::process::Child>>>,
 }
-
