@@ -14,8 +14,8 @@ pub struct AppKeys {
     pub search: String,
     pub daemon_menu: String,
     pub refresh: String,
-    pub focus_services: String,
-    pub focus_logs: String,
+    pub switch_tab_left: String,
+    pub switch_tab_right: String,
     pub scroll_down: String,
     pub scroll_up: String,
 }
@@ -30,8 +30,6 @@ pub struct ServicesKeys {
 #[derive(Deserialize, Debug)]
 pub struct LogsKeys {
     pub toggle_auto_scroll: String,
-    pub switch_tab_left: String,
-    pub switch_tab_right: String,
 }
 
 impl Keybinds {
