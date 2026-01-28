@@ -1,6 +1,6 @@
-mod actions;
 mod app;
 mod config;
+mod docker;
 mod event_handler;
 mod service;
 mod status;

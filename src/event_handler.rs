@@ -5,7 +5,6 @@ use ratatui::crossterm::event::{self, KeyCode, KeyEventKind};
 
 use crate::app::App;
 use crate::status::ToastState;
-use crate::toast::Toast;
 
 /// Handle keyboard events (mouse support disabled)
 pub async fn handle_events(app: &mut App) -> io::Result<bool> {
@@ -23,14 +22,14 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
             let scroll_up_key = app.keybinds.app.scroll_up.chars().next().unwrap_or('k');
             let switch_tab_left_key = app
                 .keybinds
-                .logs
+                .app
                 .switch_tab_left
                 .chars()
                 .next()
                 .unwrap_or('[');
             let switch_tab_right_key = app
                 .keybinds
-                .logs
+                .app
                 .switch_tab_right
                 .chars()
                 .next()
@@ -160,24 +159,6 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                     _ => {}
                 },
                 _ => match key.code {
-                    // Focus switching
-                    KeyCode::Char(c)
-                        if c == app
-                            .keybinds
-                            .app
-                            .focus_services
-                            .chars()
-                            .next()
-                            .unwrap_or('h') =>
-                    {
-                        app.focus = crate::app::Focus::Services;
-                    }
-                    KeyCode::Char(c)
-                        if c == app.keybinds.app.focus_logs.chars().next().unwrap_or('l') =>
-                    {
-                        app.focus = crate::app::Focus::Logs;
-                    }
-
                     // Navigation
                     KeyCode::Char(c) if c == scroll_down_key => {
                         if app.focus == crate::app::Focus::Services {
@@ -235,15 +216,9 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                         if c == app.keybinds.app.refresh.chars().next().unwrap_or('r') =>
                     {
                         app.refresh_statuses();
-                        app.toast = Some(Toast {
-                            state: ToastState::Info,
-                            message: "Refreshed statuses".to_string(),
-                        });
-                        app.toast_timer = 3;
+                        app.set_toast(ToastState::Info, "Refreshed statuses", 3);
                     }
-                    KeyCode::Char(c)
-                        if c == switch_tab_left_key && app.focus == crate::app::Focus::Logs =>
-                    {
+                    KeyCode::Char(c) if c == switch_tab_left_key => {
                         app.log_tab = match app.log_tab {
                             crate::app::LogTab::Events => crate::app::LogTab::LiveLogs,
                             crate::app::LogTab::LiveLogs => crate::app::LogTab::Events,
@@ -252,9 +227,7 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
                             app.log_auto_scroll = true;
                         }
                     }
-                    KeyCode::Char(c)
-                        if c == switch_tab_right_key && app.focus == crate::app::Focus::Logs =>
-                    {
+                    KeyCode::Char(c) if c == switch_tab_right_key => {
                         app.log_tab = match app.log_tab {
                             crate::app::LogTab::Events => crate::app::LogTab::LiveLogs,
                             crate::app::LogTab::LiveLogs => crate::app::LogTab::Events,

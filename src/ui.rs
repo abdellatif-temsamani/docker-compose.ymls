@@ -444,11 +444,6 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             ),
             Span::styled("refresh ", Style::default().fg(Color::White)),
             Span::styled(
-                format!("{}:", app.keybinds.app.focus_logs),
-                Style::default().fg(Color::Magenta),
-            ),
-            Span::styled("focus logs ", Style::default().fg(Color::White)),
-            Span::styled(
                 format!("{}:", app.keybinds.app.search),
                 Style::default().fg(Color::Blue),
             ),
@@ -457,11 +452,6 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
     } else {
         // Focus on Logs
         help_spans.extend(vec![
-            Span::styled(
-                format!("{}:", app.keybinds.app.focus_services),
-                Style::default().fg(Color::Yellow),
-            ),
-            Span::styled("focus services ", Style::default().fg(Color::White)),
             Span::styled(
                 if app.keybinds.logs.toggle_auto_scroll == " " {
                     "space:".to_string()
@@ -472,13 +462,13 @@ pub fn render_ui(frame: &mut ratatui::Frame, app: &mut App) -> io::Result<()> {
             ),
             Span::styled("toggle auto-scroll ", Style::default().fg(Color::White)),
             Span::styled(
-                format!("{}:", app.keybinds.logs.switch_tab_left),
+                format!("{}:", app.keybinds.app.switch_tab_left),
                 Style::default().fg(Color::Cyan),
             ),
             Span::styled("prev tab ", Style::default().fg(Color::White)),
             Span::styled(
-                format!("{}:", app.keybinds.logs.switch_tab_right),
-                Style::default().fg(Color::Cyan),
+                format!("{}:", app.keybinds.app.switch_tab_right),
+                Style::default().fg(Color::Red),
             ),
             Span::styled("next tab ", Style::default().fg(Color::White)),
         ]);

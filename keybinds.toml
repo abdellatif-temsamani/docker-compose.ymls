@@ -3,8 +3,8 @@ quit = "q"
 search = "/"
 daemon_menu = "d"
 refresh = "r"
-focus_services = "h"
-focus_logs = "l"
+switch_tab_left = "t"
+switch_tab_right = "T"
 scroll_down = "j"
 scroll_up = "k"
 
@@ -15,5 +15,3 @@ toggle = " "
 
 [logs]
 toggle_auto_scroll = " "
-switch_tab_left = "t"
-switch_tab_right = "T"
