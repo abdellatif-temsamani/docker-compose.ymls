@@ -4,7 +4,7 @@ use std::time::Duration;
 use ratatui::crossterm::event::{self, KeyCode, KeyEventKind};
 
 use crate::app::App;
-use crate::status::ToastState;
+use crate::status::{Status, ToastState};
 
 /// Handle keyboard events (mouse support disabled)
 pub async fn handle_events(app: &mut App) -> io::Result<bool> {
@@ -241,7 +241,16 @@ pub async fn handle_events(app: &mut App) -> io::Result<bool> {
             }
         }
     } else {
-        // Timeout: do nothing, events handle status updates
+        let needs_refresh = app.services.iter().any(|service| {
+            matches!(
+                *service.status.lock().unwrap(),
+                Status::Pulling | Status::Starting | Status::Stopping
+            )
+        });
+
+        if needs_refresh {
+            app.refresh_statuses();
+        }
     }
 
     // Handle toast timer

@@ -101,7 +101,9 @@ impl App {
 
             let service_name_for_toast = service_name.clone();
             let logs = Arc::clone(&service.logs);
+            let status = Arc::clone(&service.status);
             let project = ComposeProject::new(service_name.clone());
+            let service_name_for_status = service_name.clone();
 
             thread::spawn(move || {
                 {
@@ -153,8 +155,11 @@ impl App {
                 };
 
                 if !pull_success {
+                    *status.lock().unwrap() = Status::Error;
                     return;
                 }
+
+                *status.lock().unwrap() = Status::Starting;
 
                 if let Err(e) = run_stream(
                     project.up_detached_cmd(),
@@ -163,6 +168,12 @@ impl App {
                 ) {
                     let mut logs_lock = logs.lock().unwrap();
                     logs_lock.push_str(&format!("Up failed: {}\n", e));
+                    *status.lock().unwrap() = Status::Error;
+                } else {
+                    let actual_status = DockerClient::get_status(&service_name_for_status);
+                    if actual_status == Status::Running {
+                        *status.lock().unwrap() = Status::Running;
+                    }
                 }
             });
 
