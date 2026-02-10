@@ -11,7 +11,7 @@ pub struct Toast {
     pub message: String,
 }
 
-pub fn create_toast_widget(toast: &Toast) -> Paragraph<'_> {
+pub fn create_toast_widget(toast: &Toast, _animation_tick: u64) -> Paragraph<'_> {
     let (bg_color, fg_color, border_color) = match toast.state {
         ToastState::Success => (Color::Black, Color::Green, Color::Green),
         ToastState::Warning => (Color::Black, Color::Yellow, Color::Yellow),
