@@ -1,8 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
-    Frame,
 };
 
 use crate::app::{App, DaemonAction};
@@ -31,9 +32,41 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_daemon_menu(frame: &mut Frame, app: &App) {
-    frame.render_widget(Clear, frame.area());
+    let area = centered_rect(72, 14, frame.area());
+    frame.render_widget(Clear, area);
 
-    let area = centered_rect(50, 9, frame.area());
+    let popup = Block::default()
+        .title(" Daemon Control ")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    let inner = popup.inner(area);
+    frame.render_widget(popup, area);
+
+    let [status_area, list_area, hints_area] = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Min(6),
+        Constraint::Length(2),
+    ])
+    .areas(inner);
+
+    let (status_label, status_color) = daemon_status_style(app);
+    let status_line = Line::from(vec![
+        Span::styled("Docker status: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            status_label,
+            Style::default()
+                .fg(status_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    frame.render_widget(Paragraph::new(status_line), status_area);
+
     let actions = [
         DaemonAction::Start,
         DaemonAction::Stop,
@@ -41,7 +74,15 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
     ];
     let items: Vec<ListItem> = actions
         .iter()
-        .map(|action| ListItem::new(action_label(*action)))
+        .map(|action| {
+            ListItem::new(Line::from(vec![
+                Span::styled(action_label(*action), Style::default().fg(Color::White)),
+                Span::styled(
+                    format!("  - {}", action_description(*action)),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]))
+        })
         .collect();
 
     let selected_index = match app.daemon_action_selected {
@@ -56,69 +97,121 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
     let list = List::new(items)
         .block(
             Block::default()
-                .title("Docker Daemon")
                 .borders(Borders::ALL)
-                .border_style(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                .border_style(Style::default().fg(Color::DarkGray)),
         )
         .highlight_style(
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Cyan)
+                .bg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol(">> ");
+        .highlight_symbol("-> ");
 
-    frame.render_stateful_widget(list, area, &mut state);
+    frame.render_stateful_widget(list, list_area, &mut state);
+
+    frame.render_widget(
+        Paragraph::new("j/k or Up/Down: move   Enter: continue   Esc: cancel")
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::DarkGray)),
+        hints_area,
+    );
 }
 
 fn render_password_prompt(frame: &mut Frame, app: &App) {
-    frame.render_widget(Clear, frame.area());
+    let area = centered_rect(72, 10, frame.area());
+    frame.render_widget(Clear, area);
+
+    let popup = Block::default()
+        .title(" Confirm Daemon Action ")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        );
+    let inner = popup.inner(area);
+    frame.render_widget(popup, area);
+
+    let [action_area, input_area, hints_area] = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Length(3),
+        Constraint::Length(2),
+    ])
+    .areas(inner);
 
     let title = match app.daemon_action_selected {
-        DaemonAction::Start => "Start Docker Daemon",
-        DaemonAction::Stop => "Stop Docker Daemon",
-        DaemonAction::Restart => "Restart Docker Daemon",
+        DaemonAction::Start => "Start Docker daemon",
+        DaemonAction::Stop => "Stop Docker daemon",
+        DaemonAction::Restart => "Restart Docker daemon",
     };
-    let area = centered_rect(50, 5, frame.area());
-    let password_mask = "*".repeat(app.password_input.chars().count());
 
-    let prompt = Paragraph::new(password_mask)
-        .alignment(Alignment::Left)
-        .style(Style::default().fg(Color::White))
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-        );
-
-    let prompt = prompt.block(
-        Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Action: ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                title,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
+        ])),
+        action_area,
     );
 
-    frame.render_widget(prompt, area);
+    let password_mask = "*".repeat(app.password_input.chars().count());
+    let input_text = if password_mask.is_empty() {
+        "Type sudo password...".to_string()
+    } else {
+        password_mask
+    };
+
+    frame.render_widget(
+        Paragraph::new(input_text)
+            .alignment(Alignment::Left)
+            .style(if app.password_input.is_empty() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::White)
+            })
+            .block(
+                Block::default()
+                    .title(" Password ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            ),
+        input_area,
+    );
+
+    frame.render_widget(
+        Paragraph::new("Enter: run action   Esc: cancel")
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::DarkGray)),
+        hints_area,
+    );
 }
 
 fn action_label(action: DaemonAction) -> &'static str {
     match action {
-        DaemonAction::Start => "Start Docker Daemon",
-        DaemonAction::Stop => "Stop Docker Daemon",
-        DaemonAction::Restart => "Restart Docker Daemon",
+        DaemonAction::Start => "Start",
+        DaemonAction::Stop => "Stop",
+        DaemonAction::Restart => "Restart",
+    }
+}
+
+fn action_description(action: DaemonAction) -> &'static str {
+    match action {
+        DaemonAction::Start => "Bring up docker.service and docker.socket",
+        DaemonAction::Stop => "Stop active services first, then shut daemon down",
+        DaemonAction::Restart => "Stop active services first, then restart daemon",
+    }
+}
+
+fn daemon_status_style(app: &App) -> (&'static str, Color) {
+    if app.docker_daemon_running {
+        ("RUNNING", Color::Green)
+    } else {
+        ("STOPPED", Color::Red)
     }
 }
 

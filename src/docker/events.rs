@@ -212,11 +212,7 @@ fn docker_inspect_field(container_name: &str, template: &str) -> Option<String> 
     }
 
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn normalize_whitespace(value: &str) -> String {

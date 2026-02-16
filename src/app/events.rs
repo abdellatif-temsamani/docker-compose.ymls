@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::state::App;
-use crate::docker::events::{spawn_projects_listener, ProjectEventTargets};
+use crate::docker::events::{ProjectEventTargets, spawn_projects_listener};
 
 impl App {
     pub fn start_event_listeners(&mut self) {
