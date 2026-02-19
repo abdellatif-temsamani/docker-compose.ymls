@@ -55,6 +55,8 @@ impl App {
                 .map(|name| Service {
                     name,
                     status: Arc::new(Mutex::new(Status::Stopped)),
+                    pull_progress: Arc::new(Mutex::new(None)),
+                    events: Arc::new(Mutex::new(String::new())),
                     logs: Arc::new(Mutex::new(String::new())),
                     live_logs: Arc::new(Mutex::new(String::new())),
                     logs_child: Arc::new(Mutex::new(None)),
@@ -77,6 +79,11 @@ impl App {
             log_scroll: 0,
             log_auto_scroll: true,
             log_tab: LogTab::Events,
+            animation_tick: 0,
+            status_refresh_cooldown_ticks: 0,
+            daemon_probe_cooldown_ticks: 0,
+            event_listener_running: false,
+            toast_tick_accumulator: 0,
             keybinds,
         };
         app.refresh_statuses();
@@ -88,18 +95,22 @@ impl App {
 
 fn get_service_names() -> Vec<String> {
     match std::fs::read_dir("containers/") {
-        Ok(entries) => entries
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().is_dir())
-            .filter_map(|dir| {
-                let compose_path = dir.path().join("docker-compose.yml");
-                if compose_path.exists() {
-                    dir.file_name().to_str().map(|s| s.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect(),
+        Ok(entries) => {
+            let mut names: Vec<String> = entries
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().is_dir())
+                .filter_map(|dir| {
+                    let compose_path = dir.path().join("docker-compose.yml");
+                    if compose_path.exists() {
+                        dir.file_name().to_str().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            names
+        }
         Err(_) => vec![],
     }
 }

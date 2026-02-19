@@ -123,6 +123,38 @@ impl DockerClient {
 
         statuses
     }
+
+    pub fn all_containers_stopped(project: &str) -> bool {
+        match Command::new("docker")
+            .arg("ps")
+            .arg("-a")
+            .arg("--filter")
+            .arg(format!("label=com.docker.compose.project={}", project))
+            .arg("--format")
+            .arg("{{.Status}}")
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let statuses: Vec<&str> = stdout
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .collect();
+
+                if statuses.is_empty() {
+                    return true;
+                }
+
+                statuses.iter().all(|status| {
+                    status.starts_with("Exited")
+                        || status.starts_with("Created")
+                        || status.starts_with("Dead")
+                })
+            }
+            _ => false,
+        }
+    }
 }
 
 fn validate_service_name(name: &str) -> bool {

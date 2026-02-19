@@ -45,6 +45,11 @@ pub struct App {
     pub log_scroll: u16,
     pub log_auto_scroll: bool,
     pub log_tab: LogTab,
+    pub animation_tick: u64,
+    pub status_refresh_cooldown_ticks: u8,
+    pub daemon_probe_cooldown_ticks: u8,
+    pub event_listener_running: bool,
+    pub toast_tick_accumulator: u8,
     pub keybinds: Keybinds,
 }
 
