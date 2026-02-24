@@ -93,7 +93,7 @@ fn logs_title(app: &App) -> Line<'static> {
     let mut spans = vec![
         Span::styled(" Logs ", Style::default().fg(Color::White)),
         Span::styled(
-            format!("{}", selected_name),
+            selected_name.to_string(),
             Style::default().fg(Color::Cyan),
         ),
     ];

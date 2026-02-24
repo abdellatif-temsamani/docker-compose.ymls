@@ -28,8 +28,8 @@ impl App {
                         let compose_path =
                             format!("containers/{}/docker-compose.yml", service_name);
                         let mut text = String::new();
-                        if let Ok(content) = fs::read_to_string(&compose_path) {
-                            if let Ok(compose) = serde_yaml::from_str::<Compose>(&content) {
+                        if let Ok(content) = fs::read_to_string(&compose_path)
+                            && let Ok(compose) = serde_yaml::from_str::<Compose>(&content) {
                                 let services = compose.services.keys().cloned().collect::<Vec<_>>();
                                 let network = format!("{}_default", service_name);
                                 text = format!("Up output:\nNetwork {} Running\n", network);
@@ -37,7 +37,6 @@ impl App {
                                     text.push_str(&format!("Container {} Running\n", svc));
                                 }
                             }
-                        }
                         let mut logs_lock = logs.lock().unwrap();
                         if logs_lock.is_empty() {
                             logs_lock.push_str(&text);
@@ -115,5 +114,9 @@ impl App {
         for index in 0..self.services.len() {
             self.stop_live_logs_for_service(index);
         }
+    }
+
+    pub fn kill_all_live_logs(&self) {
+        self.stop_live_logs_for_all_services();
     }
 }
