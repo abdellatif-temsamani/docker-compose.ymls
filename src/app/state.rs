@@ -1,4 +1,5 @@
 use crate::config::Keybinds;
+use crate::docker::events::EventListenerHandle;
 use crate::service::Service;
 use crate::status::ToastState;
 use crate::toast::Toast;
@@ -49,6 +50,7 @@ pub struct App {
     pub status_refresh_cooldown_ticks: u8,
     pub daemon_probe_cooldown_ticks: u8,
     pub event_listener_running: bool,
+    pub event_listener_handle: Option<EventListenerHandle>,
     pub toast_tick_accumulator: u8,
     pub keybinds: Keybinds,
 }

@@ -83,6 +83,7 @@ impl App {
             status_refresh_cooldown_ticks: 0,
             daemon_probe_cooldown_ticks: 0,
             event_listener_running: false,
+            event_listener_handle: None,
             toast_tick_accumulator: 0,
             keybinds,
         };

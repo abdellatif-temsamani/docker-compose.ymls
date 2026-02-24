@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crate::status::Status;
+
+const MAX_EVENT_LOG_SIZE: usize = 100 * 1024;
 
 pub struct ProjectEventTargets {
     pub status: Arc<Mutex<Status>>,
@@ -14,11 +17,30 @@ pub struct ProjectEventTargets {
     pub pull_progress: Arc<Mutex<Option<String>>>,
 }
 
-pub fn spawn_projects_listener(project_targets: HashMap<String, ProjectEventTargets>) {
+pub struct EventListenerHandle {
+    shutdown: Arc<AtomicBool>,
+}
+
+impl EventListenerHandle {
+    pub fn signal_shutdown(&mut self) {
+        self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+pub fn spawn_projects_listener(
+    project_targets: HashMap<String, ProjectEventTargets>,
+) -> EventListenerHandle {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_clone = Arc::clone(&shutdown);
+
     thread::spawn(move || {
         seed_initial_events(&project_targets);
 
         loop {
+            if shutdown_clone.load(Ordering::Relaxed) {
+                break;
+            }
+
             let mut cmd = std::process::Command::new("docker");
             cmd.arg("events")
                 .arg("--filter")
@@ -26,13 +48,22 @@ pub fn spawn_projects_listener(project_targets: HashMap<String, ProjectEventTarg
                 .arg("--filter")
                 .arg("label=com.docker.compose.project")
                 .arg("--format")
-                .arg("{{.Action}}\t{{index .Actor.Attributes \"com.docker.compose.project\"}}\t{{index .Actor.Attributes \"name\"}}\t{{index .Actor.Attributes \"exitCode\"}}");
+                .arg("{{.Action}}\t{{index .Actor.Attributes \"com.docker.compose.project\"}}\t{{index .Actor.Attributes \"name\"}}\t{{index .Actor.Attributes \"exitCode\"}}")
+                .arg("--since")
+                .arg("0")
+                .arg("--until")
+                .arg("2");
 
             match cmd.stdout(Stdio::piped()).spawn() {
                 Ok(mut child) => {
                     if let Some(stdout) = child.stdout.take() {
                         let reader = BufReader::new(stdout);
                         for line in reader.lines().map_while(Result::ok) {
+                            if shutdown_clone.load(Ordering::Relaxed) {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                                break;
+                            }
                             handle_event_line(&line, &project_targets);
                         }
                     }
@@ -43,9 +74,15 @@ pub fn spawn_projects_listener(project_targets: HashMap<String, ProjectEventTarg
                 }
             }
 
-            thread::sleep(Duration::from_secs(1));
+            if shutdown_clone.load(Ordering::Relaxed) {
+                break;
+            }
+
+            thread::sleep(Duration::from_millis(500));
         }
     });
+
+    EventListenerHandle { shutdown }
 }
 
 fn seed_initial_events(project_targets: &HashMap<String, ProjectEventTargets>) {
@@ -212,7 +249,11 @@ fn docker_inspect_field(container_name: &str, template: &str) -> Option<String> 
     }
 
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() { None } else { Some(value) }
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn normalize_whitespace(value: &str) -> String {
@@ -242,5 +283,16 @@ fn append_event_log(logs: &Arc<Mutex<String>>, project: &str, container_name: &s
     } else {
         container_name
     };
-    logs_lock.push_str(&format!("[event] {} {}\n", scope, action));
+    let new_entry = format!("[event] {} {}\n", scope, action);
+
+    if logs_lock.len() + new_entry.len() > MAX_EVENT_LOG_SIZE {
+        let truncate_point = logs_lock.len().saturating_sub(MAX_EVENT_LOG_SIZE / 2);
+        if truncate_point > 0
+            && let Some(pos) = logs_lock[truncate_point..].find('\n')
+        {
+            logs_lock.drain(0..truncate_point + pos + 1);
+        }
+    }
+
+    logs_lock.push_str(&new_entry);
 }

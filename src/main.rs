@@ -42,7 +42,6 @@ fn install_panic_hook() {
 async fn main() -> io::Result<()> {
     install_panic_hook();
 
-    // Initialize terminal without mouse capture
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -63,7 +62,7 @@ async fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
 
     let keybinds = Keybinds::load();
     let mut app = App::new(keybinds);
-    app.next(); // select first
+    app.next();
 
     loop {
         let mut render_error: Option<io::Error> = None;
@@ -74,13 +73,18 @@ async fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
         })?;
 
         if let Some(err) = render_error {
+            app.stop_event_listeners();
+            app.kill_all_live_logs();
             return Err(err);
         }
 
         if !event_handler::handle_events(&mut app, FRAME_DURATION).await? {
-            break; // Exit the application
+            break;
         }
     }
+
+    app.stop_event_listeners();
+    app.kill_all_live_logs();
 
     Ok(())
 }

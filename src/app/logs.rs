@@ -116,4 +116,8 @@ impl App {
             self.stop_live_logs_for_service(index);
         }
     }
+
+    pub fn kill_all_live_logs(&self) {
+        self.stop_live_logs_for_all_services();
+    }
 }

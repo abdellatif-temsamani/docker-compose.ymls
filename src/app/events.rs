@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::state::App;
-use crate::docker::events::{ProjectEventTargets, spawn_projects_listener};
+use crate::docker::events::{spawn_projects_listener, ProjectEventTargets};
 
 impl App {
     pub fn start_event_listeners(&mut self) {
@@ -25,7 +25,7 @@ impl App {
             );
         }
 
-        spawn_projects_listener(project_targets);
+        self.event_listener_handle = Some(spawn_projects_listener(project_targets));
         self.event_listener_running = true;
 
         for service in &self.services {
@@ -34,5 +34,12 @@ impl App {
                 events.push_str("[event] listener attached\n");
             }
         }
+    }
+
+    pub fn stop_event_listeners(&mut self) {
+        if let Some(mut handle) = self.event_listener_handle.take() {
+            handle.signal_shutdown();
+        }
+        self.event_listener_running = false;
     }
 }
