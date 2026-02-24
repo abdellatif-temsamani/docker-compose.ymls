@@ -1,10 +1,10 @@
 [package]
 name = "docker-manager"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.29"
 chrono = "0.4"
 tokio = { version = "1.0", features = ["full"] }
@@ -13,4 +13,4 @@ anyhow = "1.0"
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
-toml = "0.9.9"
+toml = "1.0.3"
