@@ -109,7 +109,7 @@ fn get_service_names() -> Vec<String> {
                     }
                 })
                 .collect();
-            names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            names.sort_by_key(|a| a.to_lowercase());
             names
         }
         Err(_) => vec![],

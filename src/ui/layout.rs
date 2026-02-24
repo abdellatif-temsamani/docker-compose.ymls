@@ -53,9 +53,7 @@ pub fn build(area: Rect, show_search: bool) -> Sections {
 }
 
 fn controls_height(frame_height: u16) -> u16 {
-    if frame_height < 15 {
-        2
-    } else if frame_height < 20 {
+    if frame_height < 20 {
         2
     } else if frame_height < 30 {
         3

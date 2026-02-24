@@ -143,20 +143,18 @@ impl App {
 
                 let compose_path = format!("containers/{}/docker-compose.yml", service_name);
                 let mut skip_pull = false;
-                if let Ok(content) = fs::read_to_string(&compose_path) {
-                    if let Ok(compose) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
-                        if let Some(services) = compose.get("services").and_then(|s| s.as_mapping())
+                if let Ok(content) = fs::read_to_string(&compose_path)
+                    && let Ok(compose) = serde_yaml::from_str::<serde_yaml::Value>(&content)
+                        && let Some(services) = compose.get("services").and_then(|s| s.as_mapping())
                         {
                             let mut all_images_exist = true;
                             for (_service_name, service_def) in services {
                                 if let Some(image) =
                                     service_def.get("image").and_then(|i| i.as_str())
-                                {
-                                    if !DockerClient::image_exists(image) {
+                                    && !DockerClient::image_exists(image) {
                                         all_images_exist = false;
                                         break;
                                     }
-                                }
                             }
                             if all_images_exist {
                                 skip_pull = true;
@@ -165,8 +163,6 @@ impl App {
                                 *pull_progress.lock().unwrap() = Some("cached".to_string());
                             }
                         }
-                    }
-                }
 
                 let pull_success = if skip_pull {
                     true
@@ -350,8 +346,8 @@ fn extract_pull_progress(line: &str) -> Option<String> {
         return Some(percent.to_string());
     }
 
-    if let Some((done, total)) = extract_size_ratio(rhs) {
-        if total > 0.0 {
+    if let Some((done, total)) = extract_size_ratio(rhs)
+        && total > 0.0 {
             let phase = if rhs.contains("Extracting") {
                 "Extracting"
             } else {
@@ -360,7 +356,6 @@ fn extract_pull_progress(line: &str) -> Option<String> {
             let percent = ((done / total) * 100.0).round().clamp(0.0, 100.0) as u8;
             return Some(format!("{} {}%", phase, percent));
         }
-    }
 
     for keyword in [
         "Waiting",
