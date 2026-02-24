@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-02-24
+
+### 🐛 Bug Fixes
+
+- Stop docker events and child processes on app exit
+- I fixed ai code because it's the worse
+
 ## [0.1.1] - 2026-02-19
 
 ### 🚀 Features

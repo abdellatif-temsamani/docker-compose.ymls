@@ -13,16 +13,21 @@ This repository provides a collection of docker-compose.yml configurations for d
 
 ## Docker Manager
 
-The Docker Manager is a Rust-based terminal user interface (TUI) application for interactively managing Docker Compose services.
+The Docker Manager (v0.2.0) is a Rust-based terminal user interface (TUI) application for interactively managing Docker Compose services.
 
 ### Features
 - Interactive selection and management of Docker Compose services
-- Start, stop, and monitor service statuses
-- Designed to work with the container configurations in this repository
+- Start, stop, and toggle service states
+- View live container logs and Docker events
+- Search/filter services
+- Docker daemon control (start/stop/restart)
+- Toast notifications for actions
+- Configurable keybinds
 
 ### Dependencies
-- Rust and Cargo (for building)
+- Rust 2024 and Cargo
 - Docker and Docker Compose
+- ratatui, tokio, crossterm
 
 ### Building and Running
 1. Ensure Rust is installed: https://rustup.rs/
@@ -42,8 +47,6 @@ The application displays the app name and version in the bottom right corner.
 
 **Navigation:**
 - `Tab` / `Shift+Tab`: Navigate between Services and Logs panes
-- `h`: Focus Services pane
-- `l`: Focus Logs pane
 
 **Services Pane:**
 - `j` / `k`: Scroll through services
